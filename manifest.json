@@ -1,0 +1,19 @@
+{
+  "name": "Support Toolkit",
+  "description": "Bulk open URLs, group them under 'Failed LP', and format Grafana data to TSV for spreadsheets.",
+  "version": "1.0",
+  "manifest_version": 3,
+  "permissions": ["tabs", "tabGroups", "clipboardRead", "clipboardWrite"],
+  "icons": {
+    "16": "icon.png",
+    "32": "icon.png",
+    "48": "icon.png",
+    "128": "icon.png"
+  },
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  }
+}

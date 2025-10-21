@@ -1,0 +1,365 @@
+<!doctype html>
+<html>
+
+<head>
+  <meta charset="utf-8" />
+  <title>Support Toolkit</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+      width: 480px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: #1a202c
+    }
+
+    .container {
+      background: white;
+      border-radius: 16px;
+      margin: 16px;
+      padding: 0;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, .1), 0 10px 10px -5px rgba(0, 0, 0, .04);
+      overflow: hidden
+    }
+
+    /* --- Signature / credit (NEW) --- */
+    .credit {
+      margin: 0 16px 16px;
+      /* aligns with the card’s outer margin */
+      padding: 10px 12px;
+      text-align: center;
+      font-size: 12px;
+      color: rgba(255, 255, 255, .9);
+      background: rgba(255, 255, 255, .08);
+      border: 1px solid rgba(255, 255, 255, .18);
+      border-radius: 12px;
+      backdrop-filter: blur(4px);
+    }
+
+    .credit a {
+      color: #fff;
+      font-weight: 600;
+      text-decoration: none;
+    }
+
+    .credit a:hover {
+      text-decoration: underline;
+    }
+
+    /* Tabs */
+    .tabs {
+      display: flex;
+      background: #f7fafc;
+      border-bottom: 2px solid #e2e8f0
+    }
+
+    .tab {
+      flex: 1;
+      padding: 16px;
+      text-align: center;
+      font-size: 14px;
+      font-weight: 600;
+      color: #718096;
+      cursor: pointer;
+      transition: all .2s ease;
+      border-bottom: 3px solid transparent;
+      user-select: none
+    }
+
+    .tab:hover {
+      background: #edf2f7;
+      color: #4a5568
+    }
+
+    .tab.active {
+      color: #667eea;
+      background: white;
+      border-bottom-color: #667eea
+    }
+
+    .tab-content {
+      display: none;
+      padding: 24px
+    }
+
+    .tab-content.active {
+      display: block
+    }
+
+    /* Titles */
+    h3 {
+      font-size: 20px;
+      font-weight: 700;
+      color: #1a202c;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px
+    }
+
+    .icon {
+      width: 24px;
+      height: 24px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      border-radius: 6px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 14px;
+      font-weight: bold
+    }
+
+    .subtitle {
+      color: #718096;
+      font-size: 14px;
+      line-height: 1.5;
+      margin-bottom: 20px
+    }
+
+    /* Layout helpers */
+    .row {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 12px
+    }
+
+    .row+textarea {
+      margin-top: 12px
+    }
+
+    button {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      padding: 10px 18px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all .2s ease;
+      box-shadow: 0 4px 6px -1px rgba(102, 126, 234, .3)
+    }
+
+    button:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 12px -1px rgba(102, 126, 234, .4)
+    }
+
+    button:active {
+      transform: translateY(0)
+    }
+
+    button.primary {
+      width: 100%;
+      padding: 14px;
+      font-size: 15px;
+      background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+      box-shadow: 0 4px 6px -1px rgba(245, 87, 108, .3)
+    }
+
+    button.primary:hover {
+      box-shadow: 0 6px 12px -1px rgba(245, 87, 108, .4)
+    }
+
+    button.danger {
+      background: #ef4444;
+      box-shadow: 0 4px 6px -1px rgba(239, 68, 68, .3)
+    }
+
+    .actions {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      margin-top: 12px;
+    }
+
+    textarea+.primary,
+    textarea+.actions,
+    textarea+button {
+      margin-top: 12px;
+    }
+
+    .actions .grow {
+      flex: 1
+    }
+
+    textarea {
+      width: 100%;
+      height: 140px;
+      padding: 12px;
+      border: 2px solid #e2e8f0;
+      border-radius: 8px;
+      font-size: 13px;
+      font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+      resize: vertical;
+      transition: border-color .2s ease;
+      background: #f7fafc
+    }
+
+    textarea:focus {
+      outline: none;
+      border-color: #667eea;
+      background: white
+    }
+
+    textarea::placeholder {
+      color: #a0aec0
+    }
+
+    label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 14px;
+      color: #4a5568;
+      cursor: pointer;
+      user-select: none
+    }
+
+    input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      cursor: pointer;
+      accent-color: #667eea
+    }
+
+    #urlCounts,
+    #urlPreview,
+    #urlStatus,
+    #tsvStatus {
+      font-size: 13px;
+      color: #4a5568;
+      padding: 10px 12px;
+      background: #edf2f7;
+      border-radius: 6px;
+      margin-top: 12px;
+      font-weight: 500
+    }
+
+    #urlPreview {
+      max-height: 160px;
+      overflow: auto;
+      background: #f7fafc;
+      border: 2px solid #e2e8f0;
+      font-size: 12px;
+      font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+      color: #2d3748;
+      line-height: 1.6
+    }
+
+    #urlPreview::-webkit-scrollbar {
+      width: 8px
+    }
+
+    #urlPreview::-webkit-scrollbar-track {
+      background: #edf2f7;
+      border-radius: 4px
+    }
+
+    #urlPreview::-webkit-scrollbar-thumb {
+      background: #cbd5e0;
+      border-radius: 4px
+    }
+
+    #urlPreview::-webkit-scrollbar-thumb:hover {
+      background: #a0aec0
+    }
+
+    #urlStatus:empty,
+    #tsvStatus:empty,
+    #urlCounts:empty,
+    #urlPreview:empty {
+      display: none
+    }
+
+    code {
+      background: #e2e8f0;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+      color: #667eea
+    }
+
+    .badge {
+      display: inline-block;
+      background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+      color: white;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .5px
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <div class="tabs">
+      <div class="tab active" data-tab="urls">🔗 Open URLs</div>
+      <div class="tab" data-tab="grafana">📊 Grafana → TSV</div>
+    </div>
+
+    <!-- URLs Tab -->
+    <div class="tab-content active" id="urls-content">
+      <h3><span class="icon">🔗</span> Open & Group URLs</h3>
+      <p class="subtitle">Click "Read clipboard" or paste your table text below. Duplicates are automatically removed.
+      </p>
+
+      <div class="row">
+        <button id="readUrlClip">📋 Read clipboard</button>
+        <label>
+          <input type="checkbox" id="useDelay">
+          <span>1s delay between tabs</span>
+        </label>
+      </div>
+
+      <textarea id="urlInput" placeholder="Paste your table text with URLs here…"></textarea>
+      <div id="urlCounts"></div>
+      <div id="urlPreview"></div>
+
+      <div class="actions">
+        <button id="runUrls" class="primary grow">🚀 Open & group as "Failed LP"</button>
+        <button id="stopOpen" class="danger" style="display:none;">⏹ Stop</button>
+      </div>
+
+      <div id="urlStatus"></div>
+    </div>
+
+    <!-- Grafana Tab -->
+    <div class="tab-content" id="grafana-content">
+      <h3><span class="icon">📊</span> Grafana → TSV <span class="badge">Sheets</span></h3>
+      <p class="subtitle">Reads clipboard (or textarea), pairs lines as <code>Company</code> + <code>Count</code>, and
+        copies tab-separated text back to clipboard.</p>
+
+      <div class="row">
+        <button id="readGrafanaClip">📋 Read clipboard</button>
+      </div>
+
+      <textarea id="grafanaInput" placeholder="Paste your Grafana table text here…"></textarea>
+
+      <button id="formatGrafana" class="primary">✨ Format Grafana table → copy TSV</button>
+      <div id="tsvStatus"></div>
+    </div>
+  </div>
+
+  <div class="credit">
+    Just a little something from
+    <a href="https://www.linkedin.com/in/elirang/" target="_blank" rel="noopener noreferrer">Eliran</a> |
+    <a href="https://github.com/elirangor/" target="_blank" rel="noopener noreferrer">View on GitHub</a>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+
+</html>
