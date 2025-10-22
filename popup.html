@@ -27,10 +27,8 @@
       overflow: hidden
     }
 
-    /* --- Signature / credit (NEW) --- */
     .credit {
       margin: 0 16px 16px;
-      /* aligns with the card’s outer margin */
       padding: 10px 12px;
       text-align: center;
       font-size: 12px;
@@ -51,7 +49,6 @@
       text-decoration: underline;
     }
 
-    /* Tabs */
     .tabs {
       display: flex;
       background: #f7fafc;
@@ -91,7 +88,6 @@
       display: block
     }
 
-    /* Titles */
     h3 {
       font-size: 20px;
       font-weight: 700;
@@ -122,7 +118,6 @@
       margin-bottom: 20px
     }
 
-    /* Layout helpers */
     .row {
       display: flex;
       gap: 12px;
@@ -131,8 +126,17 @@
       margin-bottom: 12px
     }
 
-    .row+textarea {
-      margin-top: 12px
+    /* Force identical gap above the textareas in both tabs */
+    #urls-content .row+#urlInput,
+    #grafana-content .row+#grafanaInput {
+      margin-top: 0 !important;
+      /* no extra gap above textarea */
+    }
+
+    /* Keep the row gap consistent */
+    #urls-content .row,
+    #grafana-content .row {
+      margin-bottom: 12px !important;
     }
 
     button {
@@ -178,12 +182,6 @@
       display: flex;
       gap: 12px;
       align-items: center;
-      margin-top: 12px;
-    }
-
-    textarea+.primary,
-    textarea+.actions,
-    textarea+button {
       margin-top: 12px;
     }
 
@@ -255,38 +253,11 @@
       line-height: 1.6
     }
 
-    #urlPreview::-webkit-scrollbar {
-      width: 8px
-    }
-
-    #urlPreview::-webkit-scrollbar-track {
-      background: #edf2f7;
-      border-radius: 4px
-    }
-
-    #urlPreview::-webkit-scrollbar-thumb {
-      background: #cbd5e0;
-      border-radius: 4px
-    }
-
-    #urlPreview::-webkit-scrollbar-thumb:hover {
-      background: #a0aec0
-    }
-
     #urlStatus:empty,
     #tsvStatus:empty,
     #urlCounts:empty,
     #urlPreview:empty {
       display: none
-    }
-
-    code {
-      background: #e2e8f0;
-      padding: 2px 6px;
-      border-radius: 4px;
-      font-size: 12px;
-      font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
-      color: #667eea
     }
 
     .badge {
@@ -318,10 +289,7 @@
 
       <div class="row">
         <button id="readUrlClip">📋 Read clipboard</button>
-        <label>
-          <input type="checkbox" id="useDelay">
-          <span>1s delay between tabs</span>
-        </label>
+        <label><input type="checkbox" id="useDelay"><span>1s delay between tabs</span></label>
       </div>
 
       <textarea id="urlInput" placeholder="Paste your table text with URLs here…"></textarea>
@@ -338,9 +306,8 @@
 
     <!-- Grafana Tab -->
     <div class="tab-content" id="grafana-content">
-      <h3><span class="icon">📊</span> Grafana → TSV <span class="badge">Sheets</span></h3>
-      <p class="subtitle">Reads clipboard (or textarea), pairs lines as <code>Company</code> + <code>Count</code>, and
-        copies tab-separated text back to clipboard.</p>
+      <h3><span class="icon">📊</span> Grafana → TSV <span class="badge">Docs/Sheets</span></h3>
+      <p class="subtitle">Paste raw text from Grafana, then copy a clean table (HTML + TSV fallback).</p>
 
       <div class="row">
         <button id="readGrafanaClip">📋 Read clipboard</button>
@@ -348,7 +315,14 @@
 
       <textarea id="grafanaInput" placeholder="Paste your Grafana table text here…"></textarea>
 
-      <button id="formatGrafana" class="primary">✨ Format Grafana table → copy TSV</button>
+      <!-- 2-col (Company | Count) -->
+      <button id="formatGrafana" class="primary">✨ Format Grafana (Company | Count)</button>
+
+      <!-- 3-col (Error | Version | Count), always rich table -->
+      <div class="row" style="margin-top:8px;">
+        <button id="formatGrafana3" class="primary">✨ Format 3-column (Error | Version | Count)</button>
+      </div>
+
       <div id="tsvStatus"></div>
     </div>
   </div>
