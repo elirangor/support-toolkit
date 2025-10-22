@@ -191,7 +191,7 @@
 
     textarea {
       width: 100%;
-      height: 140px;
+      height: 130px;
       padding: 12px;
       border: 2px solid #e2e8f0;
       border-radius: 8px;
@@ -277,13 +277,13 @@
 <body>
   <div class="container">
     <div class="tabs">
-      <div class="tab active" data-tab="urls">🔗 Open URLs</div>
+      <div class="tab active" data-tab="urls">🔗 Open LP URLs</div>
       <div class="tab" data-tab="grafana">📊 Grafana → Daily Report</div>
     </div>
 
     <!-- URLs Tab -->
     <div class="tab-content active" id="urls-content">
-      <h3><span class="icon">🔗</span> Open & Group URLs</h3>
+      <h3><span class="icon">🔗</span> Open & Group LP URLs</h3>
       <p class="subtitle">Click "Read clipboard" or paste your table text below. Duplicates are automatically removed.
       </p>
 
@@ -307,7 +307,7 @@
     <!-- Grafana Tab -->
     <div class="tab-content" id="grafana-content">
       <h3><span class="icon">📊</span> Grafana → Daily Report <span class="badge">Docs/Sheets</span></h3>
-      <p class="subtitle">Paste raw text from Grafana, then copy a clean table (HTML or TSV).</p>
+      <p class="subtitle">Paste your Grafana table text below to generate a clean, ready-to-copy report (HTML or TSV)</p>
 
       <div class="row">
         <button id="readGrafanaClip">📋 Read clipboard</button>
@@ -316,12 +316,15 @@
       <textarea id="grafanaInput" placeholder="Paste your Grafana table text here…"></textarea>
 
       <!-- 2-col (Company | Count) -->
-      <button id="formatGrafana" class="primary">✨ Format companies batches count</button>
+      <div class="actions">
+        <button id="formatGrafana" class="primary grow">✨ Format Company Batch Counts</button>
+      </div>
 
       <!-- 3-col (Error | Version | Count), always rich table -->
-      <div class="row" style="margin-top:8px;">
-        <button id="formatGrafana3" class="primary">✨ Format media player errors</button>
+      <div class="actions">
+        <button id="formatGrafana3" class="primary grow">✨ Format Media Player Errors</button>
       </div>
+
 
       <div id="tsvStatus"></div>
     </div>
