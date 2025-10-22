@@ -278,7 +278,7 @@
   <div class="container">
     <div class="tabs">
       <div class="tab active" data-tab="urls">🔗 Open URLs</div>
-      <div class="tab" data-tab="grafana">📊 Grafana → TSV</div>
+      <div class="tab" data-tab="grafana">📊 Grafana → Daily Report</div>
     </div>
 
     <!-- URLs Tab -->
@@ -306,8 +306,8 @@
 
     <!-- Grafana Tab -->
     <div class="tab-content" id="grafana-content">
-      <h3><span class="icon">📊</span> Grafana → TSV <span class="badge">Docs/Sheets</span></h3>
-      <p class="subtitle">Paste raw text from Grafana, then copy a clean table (HTML + TSV fallback).</p>
+      <h3><span class="icon">📊</span> Grafana → Daily Report <span class="badge">Docs/Sheets</span></h3>
+      <p class="subtitle">Paste raw text from Grafana, then copy a clean table (HTML or TSV).</p>
 
       <div class="row">
         <button id="readGrafanaClip">📋 Read clipboard</button>
@@ -316,11 +316,11 @@
       <textarea id="grafanaInput" placeholder="Paste your Grafana table text here…"></textarea>
 
       <!-- 2-col (Company | Count) -->
-      <button id="formatGrafana" class="primary">✨ Format Grafana (Company | Count)</button>
+      <button id="formatGrafana" class="primary">✨ Format companies batches count</button>
 
       <!-- 3-col (Error | Version | Count), always rich table -->
       <div class="row" style="margin-top:8px;">
-        <button id="formatGrafana3" class="primary">✨ Format 3-column (Error | Version | Count)</button>
+        <button id="formatGrafana3" class="primary">✨ Format media player errors</button>
       </div>
 
       <div id="tsvStatus"></div>

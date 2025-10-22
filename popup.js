@@ -136,7 +136,7 @@ document.addEventListener('DOMContentLoaded', () => {
     return rows;
   }
 
-  // === Clipboard: write HTML table (always) + TSV fallback ===
+  // === Clipboard helpers ===
   function tableToHTML(headers, rows) {
     const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     const th = headers.length
@@ -148,7 +148,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const all = headers.length ? [headers, ...rows] : rows;
     return all.map(r => r.join("\t")).join("\n");
   }
-  async function copyTable(headers, rows) {
+
+  // copy ONLY TSV (plain text)
+  async function copyTSVOnly(headers, rows) {
+    const tsv = rowsToTSV(headers, rows);
+    await navigator.clipboard.writeText(tsv);
+    return { tsvLines: tsv.split("\n").length };
+  }
+
+  // copy HTML table + TSV (rich paste)
+  async function copyTableHTMLPlusTSV(headers, rows) {
     const html = tableToHTML(headers, rows);
     const tsv = rowsToTSV(headers, rows);
     if (window.ClipboardItem) {
@@ -173,7 +182,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // 2-col: Company | Count (keeps header row)
+  // === 1) Company | Count — TSV ONLY (no table) ===
   document.getElementById('formatGrafana').addEventListener('click', async () => {
     const out = document.getElementById('tsvStatus');
     try {
@@ -184,13 +193,13 @@ document.addEventListener('DOMContentLoaded', () => {
       const rows = parseCompanyCount(source);
       if (!rows.length) { out.textContent = "Could not parse any rows (expected Company/Count pairs)."; return; }
 
-      const { tsvLines } = await copyTable(["Company", "Count"], rows);
+      const { tsvLines } = await copyTSVOnly([], rows); // no headers
       const preview = rows.slice(0, Math.min(3, rows.length)).map(r => r.join(" | ")).join(" || ");
-      out.textContent = `Copied table (${tsvLines - 1} rows). Example: ${preview}${rows.length > 3 ? " ..." : ""}`;
+      out.textContent = `Copied TSV (${tsvLines - 1} rows). Example: ${preview}${rows.length > 3 ? " ..." : ""}`;
     } catch (e) { out.textContent = "Clipboard error. " + (e?.message || e); }
   });
 
-  // 3-col: ALWAYS rich table; permanent order Error | Version | Count; NO header row
+  // === 2) Error | Version | Count — HTML table (+ TSV fallback) ===
   document.getElementById('formatGrafana3').addEventListener('click', async () => {
     const out = document.getElementById('tsvStatus');
     try {
@@ -201,13 +210,13 @@ document.addEventListener('DOMContentLoaded', () => {
       const rowsVEC = parseVersionErrorCount(source);
       if (!rowsVEC.length) { out.textContent = "Could not parse any 3-line groups (Version, Error, Count)."; return; }
 
-      // Swap to Error | Version | Count; no header row
+      // permanent order swap to Error | Version | Count; no header row
       const finalRows = rowsVEC.map(([version, error, count]) => [error, version, count]);
-      const headers = []; // fixed: no headers
+      const headers = []; // no headers
 
-      const { tsvLines } = await copyTable(headers, finalRows);
+      const { tsvLines } = await copyTableHTMLPlusTSV(headers, finalRows); // <-- rich table
       const shown = finalRows.slice(0, Math.min(2, finalRows.length)).map(r => r.join(" | ")).join(" || ");
-      out.textContent = `Copied table (${tsvLines} row${tsvLines === 1 ? "" : "s"}). Example: ${shown}${finalRows.length > 2 ? " ..." : ""}`;
+      out.textContent = `Copied HTML table + TSV (${tsvLines} row${tsvLines === 1 ? "" : "s"}). Example: ${shown}${finalRows.length > 2 ? " ..." : ""}`;
     } catch (e) { out.textContent = "Clipboard error. " + (e?.message || e); }
   });
 });
