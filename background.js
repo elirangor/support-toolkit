@@ -1,8 +1,57 @@
 // background.js
-// Handles all heavy lifting in the background — continues even if popup closes.
+// Robust opening with per-URL retries + cancel support
 
 // Track running jobs so we can cancel mid-loop
 const jobs = new Map(); // jobId -> { cancelled: boolean }
+
+function sleep(ms, jobId) {
+  return new Promise((resolve) => {
+    const t = setTimeout(() => resolve(true), ms);
+    // light cancel polling; if cancelled, resolve early
+    const check = () => {
+      if (jobs.get(jobId)?.cancelled) {
+        clearTimeout(t);
+        resolve(false);
+      } else {
+        setTimeout(check, 50);
+      }
+    };
+    setTimeout(check, 50);
+  });
+}
+
+// Detect errors that are safe to retry
+function isTransientTabError(errMsg = "") {
+  return /Tabs cannot be edited right now|user may be dragging a tab|currently being dragged|No browser window/i.test(
+    String(errMsg)
+  );
+}
+
+// Create a tab with retries/backoff. Returns the Tab or null (skipped), never throws.
+async function createTabWithRetry({ url, windowId, jobId, maxRetries = 20 }) {
+  let attempt = 0;
+  while (true) {
+    if (jobs.get(jobId)?.cancelled) return null;
+
+    try {
+      const tab = await chrome.tabs.create({ url, active: false, windowId });
+      return tab; // success
+    } catch (e) {
+      const msg = e?.message || String(e);
+      // Retry transient errors; skip others
+      if (isTransientTabError(msg) && attempt < maxRetries) {
+        // simple backoff: 100ms + 150ms*attempt, capped at ~2s
+        const waitMs = Math.min(2000, 100 + attempt * 150);
+        await sleep(waitMs, jobId);
+        attempt++;
+        continue;
+      } else {
+        console.warn("[Support Toolkit] Skipping URL due to non-retryable error:", url, msg);
+        return null;
+      }
+    }
+  }
+}
 
 async function openAndGroupInBackground({ urls, windowId, delayMs, jobId }) {
   const tabIds = [];
@@ -10,39 +59,27 @@ async function openAndGroupInBackground({ urls, windowId, delayMs, jobId }) {
 
   try {
     for (const u of urls) {
-      // Stop if cancelled
       if (jobs.get(jobId)?.cancelled) break;
 
-      const tab = await chrome.tabs.create({ url: u, active: false, windowId });
-      tabIds.push(tab.id);
+      const tab = await createTabWithRetry({ url: u, windowId, jobId });
+      if (tab?.id != null) tabIds.push(tab.id);
 
-      // Respect optional delay, but allow cancel during the wait
+      // optional delay between tabs (also cancel-aware)
       if (delayMs > 0) {
-        const waited = await new Promise(resolve => {
-          const t = setTimeout(() => resolve(true), delayMs);
-          // simple polling for cancel state while "sleeping"
-          const check = () => {
-            if (jobs.get(jobId)?.cancelled) {
-              clearTimeout(t);
-              resolve(false);
-            } else {
-              setTimeout(() => {
-                // do nothing, timeout will resolve if not cancelled
-              }, 0);
-            }
-          };
-          // micro-queue single check (fast exit)
-          setTimeout(check, 0);
-        });
-        if (!waited) break; // was cancelled during delay
+        const waited = await sleep(delayMs, jobId);
+        if (!waited) break; // cancelled during delay
       }
     }
 
-    // If we opened any tabs, group them (nice cleanup whether cancelled or not)
+    // Group whatever we managed to open (even if cancelled or some failed)
     let groupId = null;
     if (tabIds.length) {
-      groupId = await chrome.tabs.group({ tabIds, createProperties: { windowId } });
-      await chrome.tabGroups.update(groupId, { title: "Failed LP", color: "red" });
+      try {
+        groupId = await chrome.tabs.group({ tabIds, createProperties: { windowId } });
+        await chrome.tabGroups.update(groupId, { title: "Failed LP", color: "red" });
+      } catch (e) {
+        console.warn("[Support Toolkit] Grouping failed:", e?.message || e);
+      }
     }
 
     const wasCancelled = !!jobs.get(jobId)?.cancelled;
@@ -61,6 +98,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         sendResponse({ ok: true, ...result });
       } catch (e) {
         console.error(e);
+        // If we reach this, it’s truly fatal
         sendResponse({ ok: false, error: e?.message || String(e) });
       }
     })();
@@ -80,6 +118,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       console.error(e);
       sendResponse({ ok: false, error: e?.message || String(e) });
     }
+    return true;
+  }
+
+  // Report whether any jobs are currently running (for popup Stop button)
+  if (msg?.type === "JOB_STATUS") {
+    const runningIds = [...jobs.entries()]
+      .filter(([, v]) => v && !v.cancelled)
+      .map(([id]) => id);
+    sendResponse({ ok: true, running: runningIds.length > 0, jobIds: runningIds });
     return true;
   }
 });

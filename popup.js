@@ -1,4 +1,7 @@
+// popup.js
+
 document.addEventListener('DOMContentLoaded', () => {
+
   // ===== Tabs =====
   document.querySelectorAll('.tab').forEach(tab => {
     tab.addEventListener('click', () => {
@@ -8,14 +11,35 @@ document.addEventListener('DOMContentLoaded', () => {
       tab.classList.add('active');
       document.getElementById(`${targetTab}-content`).classList.add('active');
       try { localStorage.setItem('activeTab', targetTab); } catch { }
+
+      // ✅ Keep Stop/Run in sync when switching tabs
+      refreshRunningUI();
     });
   });
+
   try {
     const last = localStorage.getItem('activeTab');
     if (last && document.getElementById(`${last}-content`)) {
       document.querySelector(`.tab[data-tab="${last}"]`)?.click();
     }
   } catch { }
+
+    // ===== Remember the 1s Delay Toggle =====
+  const delayCheckbox = document.getElementById('useDelay');
+
+  // Restore last saved value (defaults to false)
+  try {
+    const saved = localStorage.getItem('useDelayChecked');
+    if (saved === 'true') delayCheckbox.checked = true;
+  } catch { }
+
+  // Save whenever user changes it
+  delayCheckbox.addEventListener('change', () => {
+    try {
+      localStorage.setItem('useDelayChecked', delayCheckbox.checked);
+    } catch { }
+  });
+
 
   // ===== URL helpers =====
   function sanitize(u) { return u.replace(/[\u200B-\u200D\uFEFF]/g, "").replace(/[),.;\]]+$/g, "").trim(); }
@@ -58,8 +82,33 @@ document.addEventListener('DOMContentLoaded', () => {
   const status = document.getElementById('urlStatus');
 
   function setRunning(running, totalCount = null) {
-    if (running) { runBtn.disabled = true; stopBtn.style.display = ''; if (totalCount != null) { status.textContent = `Starting in background: ${totalCount} unique tab(s)… Click “Stop” to cancel.`; } }
-    else { runBtn.disabled = false; stopBtn.style.display = 'none'; }
+    if (running) {
+      runBtn.disabled = true;
+      stopBtn.style.display = '';
+      if (totalCount != null)
+        status.textContent = `Starting in background: ${totalCount} unique tab(s)… Click “Stop” to cancel.`;
+    } else {
+      runBtn.disabled = false;
+      stopBtn.style.display = 'none';
+    }
+  }
+
+  // ✅ Ask the background if a job is running and update the UI
+  async function refreshRunningUI() {
+    const resp = await new Promise((resolve) => {
+      chrome.runtime.sendMessage({ type: "JOB_STATUS" }, resolve);
+    });
+    if (!resp?.ok) return;
+
+    if (resp.running) {
+      // you only create one job at a time; take the first
+      currentJobId = resp.jobIds?.[0] || null;
+      setRunning(true);
+      status.textContent = 'Running in background… Click “Stop” to cancel.';
+    } else {
+      currentJobId = null;
+      setRunning(false);
+    }
   }
 
   runBtn.addEventListener('click', async () => {
@@ -82,7 +131,8 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!resp) return;
       setRunning(false);
       status.textContent = resp.ok
-        ? `${resp.cancelled ? 'Stopped early.' : 'Done.'} Opened ${resp.count} tab(s) and grouped as “Failed LP”.`
+        ? `${resp.cancelled ? 'Stopped early.' : 'Done.'} Opened ${resp.count} tab(s)${resp.cancelled ? '' : ' (some URLs may be skipped if non-retryable)'}.
+          Grouped as “Failed LP”.`
         : `Error: ${resp.error}`;
       currentJobId = null;
     });
@@ -122,6 +172,7 @@ document.addEventListener('DOMContentLoaded', () => {
       && (B.includes("description") || B.includes("error"))
       && (C.includes("count") || C.includes("unique"));
   }
+
   function parseVersionErrorCount(raw) {
     const lines = normalizeLines(raw);
     if (!lines.length) return [];
@@ -136,7 +187,6 @@ document.addEventListener('DOMContentLoaded', () => {
     return rows;
   }
 
-  // === Clipboard helpers ===
   function tableToHTML(headers, rows) {
     const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     const th = headers.length
@@ -144,19 +194,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const tb = `<tbody>${rows.map(r => `<tr>${r.map(c => `<td style="border:1px solid #000;padding:6px 8px;vertical-align:top;">${esc(c)}</td>`).join("")}</tr>`).join("")}</tbody>`;
     return `<!doctype html><html><body><table style="border-collapse:collapse;">${th}${tb}</table></body></html>`;
   }
+
   function rowsToTSV(headers, rows) {
     const all = headers.length ? [headers, ...rows] : rows;
     return all.map(r => r.join("\t")).join("\n");
   }
 
-  // copy ONLY TSV (plain text)
   async function copyTSVOnly(headers, rows) {
     const tsv = rowsToTSV(headers, rows);
     await navigator.clipboard.writeText(tsv);
     return { tsvLines: tsv.split("\n").length };
   }
 
-  // copy HTML table + TSV (rich paste)
   async function copyTableHTMLPlusTSV(headers, rows) {
     const html = tableToHTML(headers, rows);
     const tsv = rowsToTSV(headers, rows);
@@ -170,7 +219,6 @@ document.addEventListener('DOMContentLoaded', () => {
     return { tsvLines: tsv.split("\n").length };
   }
 
-  // Read clipboard into Grafana textarea
   document.getElementById('readGrafanaClip').addEventListener('click', async () => {
     const out = document.getElementById('tsvStatus');
     try {
@@ -182,7 +230,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // === 1) Company | Count — TSV ONLY (no table) ===
   document.getElementById('formatGrafana').addEventListener('click', async () => {
     const out = document.getElementById('tsvStatus');
     try {
@@ -199,7 +246,6 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch (e) { out.textContent = "Clipboard error. " + (e?.message || e); }
   });
 
-  // === 2) Error | Version | Count — HTML table (+ TSV fallback) ===
   document.getElementById('formatGrafana3').addEventListener('click', async () => {
     const out = document.getElementById('tsvStatus');
     try {
@@ -210,13 +256,16 @@ document.addEventListener('DOMContentLoaded', () => {
       const rowsVEC = parseVersionErrorCount(source);
       if (!rowsVEC.length) { out.textContent = "Could not parse any 3-line groups (Version, Error, Count)."; return; }
 
-      // permanent order swap to Error | Version | Count; no header row
       const finalRows = rowsVEC.map(([version, error, count]) => [error, version, count]);
       const headers = []; // no headers
 
-      const { tsvLines } = await copyTableHTMLPlusTSV(headers, finalRows); // <-- rich table
+      const { tsvLines } = await copyTableHTMLPlusTSV(headers, finalRows);
       const shown = finalRows.slice(0, Math.min(2, finalRows.length)).map(r => r.join(" | ")).join(" || ");
       out.textContent = `Copied HTML table + TSV (${tsvLines} row${tsvLines === 1 ? "" : "s"}). Example: ${shown}${finalRows.length > 2 ? " ..." : ""}`;
     } catch (e) { out.textContent = "Clipboard error. " + (e?.message || e); }
   });
+
+  // ✅ On popup open (or reopen), sync Stop/Run with background state
+  refreshRunningUI();
+
 });
