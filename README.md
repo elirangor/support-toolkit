@@ -22,7 +22,7 @@ If you’re handling support dashboards and reports daily, you know the routine:
 
 ## 🔧 Installation
 
-1. [Download the latest release](https://github.com/elirangor/support-toolkit/releases/download/1.2/toolkit-v1.2.zip).  
+1. [Download the latest release](https://github.com/elirangor/support-toolkit/releases/download/1.3/toolkit-v1.3.zip).  
 2. Extract the `.zip` file.  
 3. Open your browser’s **Extensions page**.  
 4. Enable **Developer mode**.  
