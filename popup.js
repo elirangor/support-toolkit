@@ -11,8 +11,6 @@ document.addEventListener('DOMContentLoaded', () => {
       tab.classList.add('active');
       document.getElementById(`${targetTab}-content`).classList.add('active');
       try { localStorage.setItem('activeTab', targetTab); } catch { }
-
-      // ✅ Keep Stop/Run in sync when switching tabs
       refreshRunningUI();
     });
   });
@@ -24,35 +22,79 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   } catch { }
 
-    // ===== Remember the 1s Delay Toggle =====
+  // ===== Remember the 1s Delay Toggle =====
   const delayCheckbox = document.getElementById('useDelay');
 
-  // Restore last saved value (defaults to false)
   try {
     const saved = localStorage.getItem('useDelayChecked');
     if (saved === 'true') delayCheckbox.checked = true;
   } catch { }
 
-  // Save whenever user changes it
   delayCheckbox.addEventListener('change', () => {
-    try {
-      localStorage.setItem('useDelayChecked', delayCheckbox.checked);
-    } catch { }
+    try { localStorage.setItem('useDelayChecked', delayCheckbox.checked); } catch { }
   });
 
+  // ===== Preview helpers =====
+  function escapeHtml(s) {
+    return String(s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+  }
+
+  function truncate(s, max = 200) {
+    const str = String(s ?? "");
+    return str.length > max ? str.slice(0, max) + "…" : str;
+  }
+
+  // No bullets. Show up to maxLines lines. If more, add "... (+N more)".
+  function buildPrettyPreview(lines, maxLines = 6) {
+    if (!lines || !lines.length) return "";
+    const shown = lines.slice(0, maxLines);
+    const more = lines.length > maxLines ? `… (+${lines.length - maxLines} more)` : "";
+    return [...shown, more].filter(Boolean).map(escapeHtml).join("<br>");
+  }
 
   // ===== URL helpers =====
-  function sanitize(u) { return u.replace(/[\u200B-\u200D\uFEFF]/g, "").replace(/[),.;\]]+$/g, "").trim(); }
-  function extractAll(text) { if (!text) return []; return [...text.matchAll(/https?:\/\/[^\s"'<>()]+/g)].map(m => sanitize(m[0])); }
+  function sanitize(u) {
+    return u
+      .replace(/[\u200B-\u200D\uFEFF]/g, "")
+      .replace(/[),.;\]]+$/g, "")
+      .trim();
+  }
+
+  function extractAll(text) {
+    if (!text) return [];
+    return [...text.matchAll(/https?:\/\/[^\s"'<>()]+/g)].map(m => sanitize(m[0]));
+  }
+
   const unique = arr => [...new Set(arr)];
+
+  // ✅ LP preview display: host + pathname ONLY (no src / no query)
+  function formatUrlForPreview(u) {
+    try {
+      const url = new URL(u);
+      return `${url.host}${url.pathname}`;
+    } catch {
+      return u;
+    }
+  }
 
   function renderUrlPreview(allUrls, uniqueUrls) {
     const counts = document.getElementById("urlCounts");
     const preview = document.getElementById("urlPreview");
+
     if (!uniqueUrls.length) { counts.textContent = ""; preview.innerHTML = ""; return; }
+
     const removed = allUrls.length - uniqueUrls.length;
-    counts.textContent = `Found ${allUrls.length} URL occurrence(s) → ${uniqueUrls.length} unique (${removed} duplicate${removed === 1 ? '' : 's'} removed).`;
-    preview.innerHTML = uniqueUrls.map((u, i) => `${i + 1}. ${u}`).join("<br>");
+    counts.textContent =
+      `Found ${allUrls.length} URL occurrence(s) → ${uniqueUrls.length} unique (${removed} duplicate${removed === 1 ? '' : 's'} removed).`;
+
+    // ✅ one visual line per item (CSS handles no-wrap + horizontal scroll)
+    preview.innerHTML = uniqueUrls.map((u, i) => {
+      const shortText = formatUrlForPreview(u);
+      return `<div class="url-line" title="${escapeHtml(u)}">${i + 1}. ${escapeHtml(shortText)}</div>`;
+    }).join("");
   }
 
   document.getElementById('readUrlClip').addEventListener('click', async () => {
@@ -73,6 +115,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const all = extractAll(t);
     renderUrlPreview(all, unique(all));
   });
+
   renderUrlPreview([], []);
 
   // ===== Open/group URLs =====
@@ -86,14 +129,13 @@ document.addEventListener('DOMContentLoaded', () => {
       runBtn.disabled = true;
       stopBtn.style.display = '';
       if (totalCount != null)
-        status.textContent = `Starting in background: ${totalCount} unique tab(s)… Click “Stop” to cancel.`;
+        status.textContent = `Starting in background: ${totalCount} unique tab(s)… Click "Stop" to cancel.`;
     } else {
       runBtn.disabled = false;
       stopBtn.style.display = 'none';
     }
   }
 
-  // ✅ Ask the background if a job is running and update the UI
   async function refreshRunningUI() {
     const resp = await new Promise((resolve) => {
       chrome.runtime.sendMessage({ type: "JOB_STATUS" }, resolve);
@@ -101,10 +143,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!resp?.ok) return;
 
     if (resp.running) {
-      // you only create one job at a time; take the first
       currentJobId = resp.jobIds?.[0] || null;
       setRunning(true);
-      status.textContent = 'Running in background… Click “Stop” to cancel.';
+      status.textContent = 'Running in background… Click "Stop" to cancel.';
     } else {
       currentJobId = null;
       setRunning(false);
@@ -132,7 +173,7 @@ document.addEventListener('DOMContentLoaded', () => {
       setRunning(false);
       status.textContent = resp.ok
         ? `${resp.cancelled ? 'Stopped early.' : 'Done.'} Opened ${resp.count} tab(s)${resp.cancelled ? '' : ' (some URLs may be skipped if non-retryable)'}.
-          Grouped as “Failed LP”.`
+          Grouped as "Failed LP".`
         : `Error: ${resp.error}`;
       currentJobId = null;
     });
@@ -230,6 +271,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
+  // ===== Formatter: Company/Count =====
   document.getElementById('formatGrafana').addEventListener('click', async () => {
     const out = document.getElementById('tsvStatus');
     try {
@@ -240,12 +282,20 @@ document.addEventListener('DOMContentLoaded', () => {
       const rows = parseCompanyCount(source);
       if (!rows.length) { out.textContent = "Could not parse any rows (expected Company/Count pairs)."; return; }
 
-      const { tsvLines } = await copyTSVOnly([], rows); // no headers
-      const preview = rows.slice(0, Math.min(3, rows.length)).map(r => r.join(" | ")).join(" || ");
-      out.textContent = `Copied TSV (${tsvLines - 1} rows). Example: ${preview}${rows.length > 3 ? " ..." : ""}`;
-    } catch (e) { out.textContent = "Clipboard error. " + (e?.message || e); }
+      await copyTSVOnly([], rows);
+
+      const COMPANY_PREVIEW_MAX_LINES = 6;
+      const allPreviewLines = rows.map(r => r.join(" | "));
+
+      out.innerHTML =
+        `<strong>✓ Copied TSV (${rows.length} row${rows.length === 1 ? "" : "s"})</strong>` +
+        `<br><br>Preview:<br>${buildPrettyPreview(allPreviewLines, COMPANY_PREVIEW_MAX_LINES)}`;
+    } catch (e) {
+      out.textContent = "Clipboard error. " + (e?.message || e);
+    }
   });
 
+  // ===== Formatter: Media Player Errors =====
   document.getElementById('formatGrafana3').addEventListener('click', async () => {
     const out = document.getElementById('tsvStatus');
     try {
@@ -257,12 +307,22 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!rowsVEC.length) { out.textContent = "Could not parse any 3-line groups (Version, Error, Count)."; return; }
 
       const finalRows = rowsVEC.map(([version, error, count]) => [error, version, count]);
-      const headers = []; // no headers
+      await copyTableHTMLPlusTSV([], finalRows);
 
-      const { tsvLines } = await copyTableHTMLPlusTSV(headers, finalRows);
-      const shown = finalRows.slice(0, Math.min(2, finalRows.length)).map(r => r.join(" | ")).join(" || ");
-      out.textContent = `Copied HTML table + TSV (${tsvLines} row${tsvLines === 1 ? "" : "s"}). Example: ${shown}${finalRows.length > 2 ? " ..." : ""}`;
-    } catch (e) { out.textContent = "Clipboard error. " + (e?.message || e); }
+      const ERROR_PREVIEW_MAX_LINES = 6;
+      const ERROR_TEXT_MAX = 110;
+
+      const allPreviewLines = finalRows.map(([err, ver, cnt]) => {
+        const cleanErr = truncate(String(err).replace(/\s+/g, " ").trim(), ERROR_TEXT_MAX);
+        return `${cnt} | ${ver} | ${cleanErr}`;
+      });
+
+      out.innerHTML =
+        `<strong>✓ Copied HTML table + TSV (${finalRows.length} row${finalRows.length === 1 ? "" : "s"})</strong>` +
+        `<br><br>Preview:<br>${buildPrettyPreview(allPreviewLines, ERROR_PREVIEW_MAX_LINES)}`;
+    } catch (e) {
+      out.textContent = "Clipboard error. " + (e?.message || e);
+    }
   });
 
   // ✅ On popup open (or reopen), sync Stop/Run with background state
