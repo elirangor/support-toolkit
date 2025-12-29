@@ -2,6 +2,37 @@
 
 document.addEventListener('DOMContentLoaded', () => {
 
+  // ===== Load and Display Keyboard Shortcuts Dynamically =====
+  async function loadShortcuts() {
+    try {
+      const commands = await chrome.commands.getAll();
+      
+      commands.forEach(cmd => {
+        let elementId = null;
+        
+        if (cmd.name === 'open-lp-urls') {
+          elementId = 'shortcut-urls';
+        } else if (cmd.name === 'format-company-batch') {
+          elementId = 'shortcut-batch';
+        } else if (cmd.name === 'format-media-errors') {
+          elementId = 'shortcut-errors';
+        }
+        
+        if (elementId && cmd.shortcut) {
+          const element = document.getElementById(elementId);
+          if (element) {
+            element.textContent = cmd.shortcut;
+          }
+        }
+      });
+    } catch (e) {
+      console.error('Failed to load shortcuts:', e);
+    }
+  }
+
+  // Load shortcuts on popup open
+  loadShortcuts();
+
   // ===== Tabs =====
   document.querySelectorAll('.tab').forEach(tab => {
     tab.addEventListener('click', () => {
@@ -65,7 +96,51 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function extractAll(text) {
     if (!text) return [];
-    return [...text.matchAll(/https?:\/\/[^\s"'<>()]+/g)].map(m => sanitize(m[0]));
+    
+    // Much more aggressive URL extraction
+    const urls = [];
+    
+    // Method 1: Standard regex for complete URLs
+    const standardMatches = [...text.matchAll(/https?:\/\/[^\s"'<>()]+/gi)];
+    standardMatches.forEach(m => {
+      const cleaned = sanitize(m[0]);
+      if (cleaned) urls.push(cleaned);
+    });
+    
+    // Method 2: Look for URL patterns even without http/https prefix
+    const urlPatterns = text.match(/[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]?\.(?:com|net|org|io|co|idomoo)[^\s]*/gi);
+    if (urlPatterns) {
+      urlPatterns.forEach(match => {
+        let url = match.replace(/[),.;\]]+$/g, "").trim();
+        // Add https:// if not present
+        if (!url.startsWith('http')) {
+          url = 'https://' + url;
+        }
+        if (!urls.includes(url)) urls.push(url);
+      });
+    }
+    
+    // Method 3: Split by whitespace and check each part
+    const parts = text.split(/[\s\t\n\r]+/);
+    parts.forEach(part => {
+      if (part.includes('://') || part.includes('.com') || part.includes('.idomoo')) {
+        const cleaned = part
+          .replace(/[\u200B-\u200D\uFEFF]/g, "")
+          .replace(/^[^a-zA-Z0-9]+/, "")
+          .replace(/[),.;\]]+$/g, "")
+          .trim();
+        
+        if (cleaned && (cleaned.startsWith('http') || cleaned.includes('.'))) {
+          let url = cleaned;
+          if (!url.startsWith('http')) {
+            url = 'https://' + url;
+          }
+          if (!urls.includes(url)) urls.push(url);
+        }
+      }
+    });
+    
+    return urls;
   }
 
   const unique = arr => [...new Set(arr)];

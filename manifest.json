@@ -1,9 +1,10 @@
 {
   "name": "Support Toolkit",
   "description": "Bulk open URLs, group them under 'Failed LP', and format Grafana data to TSV for spreadsheets.",
-  "version": "1.3",
+  "version": "1.4",
   "manifest_version": 3,
-  "permissions": ["tabs", "tabGroups", "clipboardRead", "clipboardWrite"],
+  "permissions": ["tabs", "tabGroups", "clipboardRead", "clipboardWrite", "notifications", "scripting", "activeTab"],
+  "host_permissions": ["<all_urls>"],
   "icons": {
     "16": "icon.png",
     "32": "icon.png",
@@ -15,5 +16,28 @@
   },
   "background": {
     "service_worker": "background.js"
+  },
+  "commands": {
+    "open-lp-urls": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+Z",
+        "mac": "Command+Shift+Z"
+      },
+      "description": "Open & group LP URLs from selection"
+    },
+    "format-company-batch": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+B",
+        "mac": "Command+Shift+B"
+      },
+      "description": "Format Company Batch from selection"
+    },
+    "format-media-errors": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+E",
+        "mac": "Command+Shift+E"
+      },
+      "description": "Format Media Errors from selection"
+    }
   }
 }

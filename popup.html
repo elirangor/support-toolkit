@@ -155,7 +155,8 @@
       font-weight: 600;
       cursor: pointer;
       transition: all .2s ease;
-      box-shadow: 0 4px 6px -1px rgba(74, 158, 255, .3)
+      box-shadow: 0 4px 6px -1px rgba(74, 158, 255, .3);
+      position: relative;
     }
 
     button:hover {
@@ -284,7 +285,6 @@
       line-height: 1.6;
     }
 
-    /* ===== LP Preview tweak: keep each entry on one line (no wrapping) ===== */
     #urlPreview {
       white-space: nowrap;
       overflow-x: auto;
@@ -295,7 +295,6 @@
     #urlPreview .url-line {
       padding: 4px 0;
     }
-    /* ====================================================================== */
 
     #urlStatus:empty,
     #tsvStatus:empty,
@@ -314,6 +313,21 @@
       font-weight: 600;
       text-transform: uppercase;
       letter-spacing: .5px
+    }
+
+    .keyboard-hint {
+      display: inline-block;
+      background: rgba(74, 158, 255, 0.15);
+      color: #ffffff;
+      padding: 3px 10px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 700;
+      font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      margin-left: 10px;
+      letter-spacing: 0.5px;
+      text-shadow: 0 0 8px rgba(74, 158, 255, 0.3);
     }
   </style>
 </head>
@@ -340,7 +354,7 @@
       <div id="urlPreview"></div>
 
       <div class="actions">
-        <button id="runUrls" class="primary grow">🚀 Open & group as "Failed LP"</button>
+        <button id="runUrls" class="primary grow">🚀 Open & group as "Failed LP" <span class="keyboard-hint" id="shortcut-urls"></span></button>
         <button id="stopOpen" class="danger" style="display:none;">⏹ Stop</button>
       </div>
 
@@ -360,12 +374,12 @@
 
       <!-- 2-col (Company | Count) -->
       <div class="actions">
-        <button id="formatGrafana" class="primary grow">✨ Format Company Batch Counts</button>
+        <button id="formatGrafana" class="primary grow">✨ Format Company Batch Counts <span class="keyboard-hint" id="shortcut-batch"></span></button>
       </div>
 
       <!-- 3-col (Error | Version | Count), always rich table -->
       <div class="actions">
-        <button id="formatGrafana3" class="primary grow">✨ Format Media Player Errors</button>
+        <button id="formatGrafana3" class="primary grow">✨ Format Media Player Errors <span class="keyboard-hint" id="shortcut-errors"></span></button>
       </div>
 
       <div id="tsvStatus"></div>
