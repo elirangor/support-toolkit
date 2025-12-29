@@ -19,10 +19,20 @@ If you’re handling support dashboards and reports daily, you know the routine:
 - 💾 Clean export-ready tables for Docs or Sheets
 - 🎨 Polished, consistent UI built for clarity
 
+## ⌨️ Keyboard Shortcuts
+
+Support Toolkit includes global keyboard shortcuts for quick actions:
+
+- **`Ctrl + Shift + Z`** (Mac: `Cmd + Shift + Z`) — Open & group selected LP URLs  
+- **`Ctrl + Shift + B`** (Mac: `Cmd + Shift + B`) — Format Company / Count report (TSV)  
+- **`Ctrl + Shift + E`** (Mac: `Cmd + Shift + E`) — Format Media Errors (TSV + HTML)
+
+> Shortcuts can be customized in Chrome via **Extensions → Keyboard shortcuts** (`chrome://extensions/shortcuts`).
+
 
 ## 🔧 Installation
 
-1. [Download the latest release](https://github.com/elirangor/support-toolkit/releases/download/1.3/toolkit-v1.3.zip).  
+1. [Download the latest release](https://github.com/elirangor/support-toolkit/releases/download/1.4/toolkit-v1.4.zip).  
 2. Extract the `.zip` file.  
 3. Open your browser’s **Extensions page**.  
 4. Enable **Developer mode**.  
