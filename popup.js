@@ -97,50 +97,42 @@ document.addEventListener('DOMContentLoaded', () => {
   function extractAll(text) {
     if (!text) return [];
     
-    // Much more aggressive URL extraction
-    const urls = [];
+    const urls = new Set();
     
-    // Method 1: Standard regex for complete URLs
+    // Method 1: Standard regex for complete URLs with http/https
     const standardMatches = [...text.matchAll(/https?:\/\/[^\s"'<>()]+/gi)];
     standardMatches.forEach(m => {
       const cleaned = sanitize(m[0]);
-      if (cleaned) urls.push(cleaned);
+      if (cleaned) urls.add(cleaned);
     });
     
-    // Method 2: Look for URL patterns even without http/https prefix
-    const urlPatterns = text.match(/[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]?\.(?:com|net|org|io|co|idomoo)[^\s]*/gi);
-    if (urlPatterns) {
-      urlPatterns.forEach(match => {
-        let url = match.replace(/[),.;\]]+$/g, "").trim();
-        // Add https:// if not present
-        if (!url.startsWith('http')) {
-          url = 'https://' + url;
-        }
-        if (!urls.includes(url)) urls.push(url);
-      });
-    }
+    // Method 2: Look for domain patterns (but be more careful)
+    // Only match if it looks like a full subdomain + domain pattern
+    const domainPattern = /(?:^|[^a-zA-Z0-9.-])([a-zA-Z0-9][-a-zA-Z0-9]{0,61}[a-zA-Z0-9]?\.)+(?:com|net|org|io|co|idomoo)(?:\/[^\s]*)?/gi;
+    const domainMatches = [...text.matchAll(domainPattern)];
     
-    // Method 3: Split by whitespace and check each part
-    const parts = text.split(/[\s\t\n\r]+/);
-    parts.forEach(part => {
-      if (part.includes('://') || part.includes('.com') || part.includes('.idomoo')) {
-        const cleaned = part
-          .replace(/[\u200B-\u200D\uFEFF]/g, "")
-          .replace(/^[^a-zA-Z0-9]+/, "")
-          .replace(/[),.;\]]+$/g, "")
-          .trim();
-        
-        if (cleaned && (cleaned.startsWith('http') || cleaned.includes('.'))) {
-          let url = cleaned;
-          if (!url.startsWith('http')) {
-            url = 'https://' + url;
-          }
-          if (!urls.includes(url)) urls.push(url);
+    domainMatches.forEach(m => {
+      let url = m[0].replace(/^[^a-zA-Z0-9]+/, "").replace(/[),.;\]]+$/g, "").trim();
+      if (!url.startsWith('http')) {
+        url = 'https://' + url;
+      }
+      
+      // Only add if it's not already a substring of an existing URL
+      let shouldAdd = true;
+      for (const existing of urls) {
+        if (existing.includes(url.replace('https://', ''))) {
+          shouldAdd = false;
+          break;
         }
+      }
+      
+      if (shouldAdd && url.includes('/')) {
+        // Has a path, likely a real URL
+        urls.add(url);
       }
     });
     
-    return urls;
+    return [...urls];
   }
 
   const unique = arr => [...new Set(arr)];

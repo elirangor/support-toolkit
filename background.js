@@ -93,54 +93,45 @@ async function openAndGroupInBackground({ urls, windowId, delayMs, jobId }) {
 function extractAll(text) {
   if (!text) return [];
   
-  // Much more aggressive URL extraction
-  const urls = [];
+  const urls = new Set();
   
-  // Method 1: Standard regex for complete URLs
+  // Method 1: Standard regex for complete URLs with http/https
   const standardMatches = [...text.matchAll(/https?:\/\/[^\s"'<>()]+/gi)];
   standardMatches.forEach(m => {
     const cleaned = m[0]
       .replace(/[\u200B-\u200D\uFEFF]/g, "")
       .replace(/[),.;\]]+$/g, "")
       .trim();
-    if (cleaned) urls.push(cleaned);
+    if (cleaned) urls.add(cleaned);
   });
   
-  // Method 2: Look for URL patterns even without http/https prefix
-  // This catches cases where URLs might be partially visible
-  const urlPatterns = text.match(/[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]?\.(?:com|net|org|io|co|idomoo)[^\s]*/gi);
-  if (urlPatterns) {
-    urlPatterns.forEach(match => {
-      let url = match.replace(/[),.;\]]+$/g, "").trim();
-      // Add https:// if not present
-      if (!url.startsWith('http')) {
-        url = 'https://' + url;
-      }
-      if (!urls.includes(url)) urls.push(url);
-    });
-  }
+  // Method 2: Look for domain patterns (but be more careful)
+  // Only match if it looks like a full subdomain + domain pattern
+  const domainPattern = /(?:^|[^a-zA-Z0-9.-])([a-zA-Z0-9][-a-zA-Z0-9]{0,61}[a-zA-Z0-9]?\.)+(?:com|net|org|io|co|idomoo)(?:\/[^\s]*)?/gi;
+  const domainMatches = [...text.matchAll(domainPattern)];
   
-  // Method 3: Split by whitespace and check each part
-  const parts = text.split(/[\s\t\n\r]+/);
-  parts.forEach(part => {
-    if (part.includes('://') || part.includes('.com') || part.includes('.idomoo')) {
-      const cleaned = part
-        .replace(/[\u200B-\u200D\uFEFF]/g, "")
-        .replace(/^[^a-zA-Z0-9]+/, "")
-        .replace(/[),.;\]]+$/g, "")
-        .trim();
-      
-      if (cleaned && (cleaned.startsWith('http') || cleaned.includes('.'))) {
-        let url = cleaned;
-        if (!url.startsWith('http')) {
-          url = 'https://' + url;
-        }
-        if (!urls.includes(url)) urls.push(url);
+  domainMatches.forEach(m => {
+    let url = m[0].replace(/^[^a-zA-Z0-9]+/, "").replace(/[),.;\]]+$/g, "").trim();
+    if (!url.startsWith('http')) {
+      url = 'https://' + url;
+    }
+    
+    // Only add if it's not already a substring of an existing URL
+    let shouldAdd = true;
+    for (const existing of urls) {
+      if (existing.includes(url.replace('https://', ''))) {
+        shouldAdd = false;
+        break;
       }
+    }
+    
+    if (shouldAdd && url.includes('/')) {
+      // Has a path, likely a real URL
+      urls.add(url);
     }
   });
   
-  return urls;
+  return [...urls];
 }
 
 function unique(arr) {
@@ -259,69 +250,40 @@ chrome.commands.onCommand.addListener(async (command) => {
     if (command === "open-lp-urls") {
       const [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true });
       
-      // Try to get selected text and copy it
+      // Copy selected text to clipboard, then read it back
       const results = await chrome.scripting.executeScript({
         target: { tabId: currentTab.id },
         func: async () => {
           try {
-            // Get the selected text directly
-            const selection = window.getSelection();
-            const selectedText = selection.toString();
+            // Copy selected text using execCommand (like the other shortcuts)
+            document.execCommand('copy');
+            await new Promise(resolve => setTimeout(resolve, 100));
             
-            console.log('[Support Toolkit] Selected text length:', selectedText?.length);
-            console.log('[Support Toolkit] Selected text preview:', selectedText?.substring(0, 500));
-            
-            if (!selectedText) {
-              return { success: false, error: 'No text selected' };
-            }
-            
-            // Copy to clipboard using modern API
-            try {
-              await navigator.clipboard.writeText(selectedText);
-            } catch (e) {
-              // Fallback to execCommand
-              document.execCommand('copy');
-            }
-            
-            // Small delay
-            await new Promise(resolve => setTimeout(resolve, 150));
-            
-            // Read back from clipboard to verify
-            const clipboardText = await navigator.clipboard.readText();
-            
-            console.log('[Support Toolkit] Clipboard text length:', clipboardText?.length);
-            console.log('[Support Toolkit] Clipboard preview:', clipboardText?.substring(0, 500));
-            
-            return { success: true, text: clipboardText || selectedText };
+            // Read from clipboard
+            const text = await navigator.clipboard.readText();
+            return { success: true, text };
           } catch (e) {
-            console.error('[Support Toolkit] Error:', e);
             return { success: false, error: e.message };
           }
         }
       });
 
       if (!results?.[0]?.result?.success) {
-        showNotification('Support Toolkit', 'Unable to copy/read selection. Make sure text is selected.');
+        showNotification('Support Toolkit', 'Unable to copy selection. Make sure text is selected.');
         return;
       }
 
       const clipboardText = results[0].result.text;
-      console.log('[Support Toolkit] Processing text:', clipboardText?.substring(0, 300));
       
       if (!clipboardText) {
-        showNotification('Support Toolkit', 'No text found. Make sure to select text first.');
+        showNotification('Support Toolkit', 'No text selected');
         return;
       }
 
       const urls = unique(extractAll(clipboardText));
-      console.log('[Support Toolkit] Extracted URLs count:', urls.length);
-      console.log('[Support Toolkit] URLs:', urls);
       
       if (!urls.length) {
-        // Show first 200 chars of text in notification for debugging
-        const preview = clipboardText.substring(0, 200).replace(/\n/g, ' ');
-        showNotification('Support Toolkit', `No URLs found in: "${preview}..."`);
-        console.log('[Support Toolkit] Full text that failed:', clipboardText);
+        showNotification('Support Toolkit', 'No URLs found in selection');
         return;
       }
 
