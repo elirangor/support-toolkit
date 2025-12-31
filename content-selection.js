@@ -1,4 +1,3 @@
-// content-selection.js
 // Reads selection (text + HTML). If selection is inside a table, returns full table HTML.
 
 function getSelectionHtml(selection) {

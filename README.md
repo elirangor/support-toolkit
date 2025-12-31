@@ -32,7 +32,7 @@ Support Toolkit includes global keyboard shortcuts for quick actions:
 
 ## 🔧 Installation
 
-1. [Download the latest release](https://github.com/elirangor/support-toolkit/releases/download/1.4.1/toolkit-v1.4.1.zip).  
+1. [Download the latest release](https://github.com/elirangor/support-toolkit/releases/download/1.4.2/toolkit-v1.4.2.zip).  
 2. Extract the `.zip` file.  
 3. Open your browser’s **Extensions page**.  
 4. Enable **Developer mode**.  

@@ -1,15 +1,13 @@
-// popup.js
-
 document.addEventListener('DOMContentLoaded', () => {
 
   // ===== Load and Display Keyboard Shortcuts Dynamically =====
   async function loadShortcuts() {
     try {
       const commands = await chrome.commands.getAll();
-      
+
       commands.forEach(cmd => {
         let elementId = null;
-        
+
         if (cmd.name === 'open-lp-urls') {
           elementId = 'shortcut-urls';
         } else if (cmd.name === 'format-company-batch') {
@@ -17,7 +15,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (cmd.name === 'format-media-errors') {
           elementId = 'shortcut-errors';
         }
-        
+
         if (elementId && cmd.shortcut) {
           const element = document.getElementById(elementId);
           if (element) {
@@ -53,16 +51,32 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   } catch { }
 
-  // ===== Remember the 1s Delay Toggle =====
+  // ===== Remember the 1s Delay Toggle (NOW SHARED WITH SHORTCUT) =====
   const delayCheckbox = document.getElementById('useDelay');
 
-  try {
-    const saved = localStorage.getItem('useDelayChecked');
-    if (saved === 'true') delayCheckbox.checked = true;
-  } catch { }
+  // Load from chrome.storage first (shared with background)
+  chrome.storage.local.get('useDelayBetweenTabs', (res) => {
+    if (typeof res.useDelayBetweenTabs === 'boolean') {
+      delayCheckbox.checked = res.useDelayBetweenTabs;
+      // mirror to localStorage for backward compatibility
+      try { localStorage.setItem('useDelayChecked', String(res.useDelayBetweenTabs)); } catch { }
+      return;
+    }
+
+    // fallback to old localStorage if exists
+    try {
+      const saved = localStorage.getItem('useDelayChecked');
+      if (saved === 'true') delayCheckbox.checked = true;
+    } catch { }
+
+    // persist initial value to storage so shortcut can read it
+    chrome.storage.local.set({ useDelayBetweenTabs: delayCheckbox.checked });
+  });
 
   delayCheckbox.addEventListener('change', () => {
-    try { localStorage.setItem('useDelayChecked', delayCheckbox.checked); } catch { }
+    const enabled = delayCheckbox.checked;
+    try { localStorage.setItem('useDelayChecked', enabled); } catch { }
+    chrome.storage.local.set({ useDelayBetweenTabs: enabled });
   });
 
   // ===== Preview helpers =====
@@ -96,27 +110,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function extractAll(text) {
     if (!text) return [];
-    
+
     const urls = new Set();
-    
+
     // Method 1: Standard regex for complete URLs with http/https
     const standardMatches = [...text.matchAll(/https?:\/\/[^\s"'<>()]+/gi)];
     standardMatches.forEach(m => {
       const cleaned = sanitize(m[0]);
       if (cleaned) urls.add(cleaned);
     });
-    
+
     // Method 2: Look for domain patterns (but be more careful)
-    // Only match if it looks like a full subdomain + domain pattern
     const domainPattern = /(?:^|[^a-zA-Z0-9.-])([a-zA-Z0-9][-a-zA-Z0-9]{0,61}[a-zA-Z0-9]?\.)+(?:com|net|org|io|co|idomoo)(?:\/[^\s]*)?/gi;
     const domainMatches = [...text.matchAll(domainPattern)];
-    
+
     domainMatches.forEach(m => {
       let url = m[0].replace(/^[^a-zA-Z0-9]+/, "").replace(/[),.;\]]+$/g, "").trim();
       if (!url.startsWith('http')) {
         url = 'https://' + url;
       }
-      
+
       // Only add if it's not already a substring of an existing URL
       let shouldAdd = true;
       for (const existing of urls) {
@@ -125,13 +138,12 @@ document.addEventListener('DOMContentLoaded', () => {
           break;
         }
       }
-      
+
       if (shouldAdd && url.includes('/')) {
-        // Has a path, likely a real URL
         urls.add(url);
       }
     });
-    
+
     return [...urls];
   }
 
@@ -157,7 +169,6 @@ document.addEventListener('DOMContentLoaded', () => {
     counts.textContent =
       `Found ${allUrls.length} URL occurrence(s) → ${uniqueUrls.length} unique (${removed} duplicate${removed === 1 ? '' : 's'} removed).`;
 
-    // ✅ one visual line per item (CSS handles no-wrap + horizontal scroll)
     preview.innerHTML = uniqueUrls.map((u, i) => {
       const shortText = formatUrlForPreview(u);
       return `<div class="url-line" title="${escapeHtml(u)}">${i + 1}. ${escapeHtml(shortText)}</div>`;
@@ -258,7 +269,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const normalizeLines = raw =>
     raw.replace(/\r\n/g, "\n").split("\n").map(s => s.trim()).filter(Boolean);
 
-  // 2-col: Company | Count → rows array
   function parseCompanyCount(raw) {
     const lines = normalizeLines(raw);
     if (!lines.length) return [];
@@ -272,7 +282,6 @@ document.addEventListener('DOMContentLoaded', () => {
     return rows;
   }
 
-  // 3-col parser (Version | Error | Count) → rows array
   function looksLikeHeaderTriplet(a, b, c) {
     if (!a || !b || !c) return false;
     const A = a.toLowerCase(), B = b.toLowerCase(), C = c.toLowerCase();
@@ -338,7 +347,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // ===== Formatter: Company/Count =====
   document.getElementById('formatGrafana').addEventListener('click', async () => {
     const out = document.getElementById('tsvStatus');
     try {
@@ -362,7 +370,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // ===== Formatter: Media Player Errors =====
   document.getElementById('formatGrafana3').addEventListener('click', async () => {
     const out = document.getElementById('tsvStatus');
     try {
