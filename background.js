@@ -92,9 +92,9 @@ async function openAndGroupInBackground({ urls, windowId, delayMs, jobId }) {
 // ===== HELPER FUNCTIONS FOR SHORTCUTS =====
 function extractAll(text) {
   if (!text) return [];
-
+  
   const urls = new Set();
-
+  
   // Method 1: Standard regex for complete URLs with http/https
   const standardMatches = [...text.matchAll(/https?:\/\/[^\s"'<>()]+/gi)];
   standardMatches.forEach(m => {
@@ -104,18 +104,18 @@ function extractAll(text) {
       .trim();
     if (cleaned) urls.add(cleaned);
   });
-
+  
   // Method 2: Look for domain patterns (but be more careful)
   // Only match if it looks like a full subdomain + domain pattern
   const domainPattern = /(?:^|[^a-zA-Z0-9.-])([a-zA-Z0-9][-a-zA-Z0-9]{0,61}[a-zA-Z0-9]?\.)+(?:com|net|org|io|co|idomoo)(?:\/[^\s]*)?/gi;
   const domainMatches = [...text.matchAll(domainPattern)];
-
+  
   domainMatches.forEach(m => {
     let url = m[0].replace(/^[^a-zA-Z0-9]+/, "").replace(/[),.;\]]+$/g, "").trim();
     if (!url.startsWith('http')) {
       url = 'https://' + url;
     }
-
+    
     // Only add if it's not already a substring of an existing URL
     let shouldAdd = true;
     for (const existing of urls) {
@@ -124,14 +124,31 @@ function extractAll(text) {
         break;
       }
     }
-
+    
     if (shouldAdd && url.includes('/')) {
       // Has a path, likely a real URL
       urls.add(url);
     }
   });
-
+  
   return [...urls];
+}
+
+// ✅ ADDED: Extract URLs from anchor tags in selected HTML/table HTML
+function extractUrlsFromHtml(html) {
+  if (!html) return [];
+
+  try {
+    const doc = new DOMParser().parseFromString(html, "text/html");
+
+    return [...doc.querySelectorAll("a[href]")]
+      .map(a => a.getAttribute("href"))
+      .filter(Boolean)
+      .map(href => href.trim());
+  } catch (e) {
+    console.warn("[Support Toolkit] Failed to parse HTML for URLs", e);
+    return [];
+  }
 }
 
 function unique(arr) {
@@ -146,7 +163,7 @@ function parseCompanyCount(raw) {
   const lines = normalizeLines(raw);
   if (!lines.length) return [];
   const headA = (lines[0] || "").toLowerCase(), headB = (lines[1] || "").toLowerCase();
-  let start = 0;
+  let start = 0; 
   if (headA === "company" && headB === "count") start = 2;
   const rows = [];
   for (let i = start; i < lines.length; i += 2) {
@@ -242,143 +259,83 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 });
 
-function extractUrlsFromHtml(html, baseUrl) {
-  if (!html) return [];
-
-  try {
-    const doc = new DOMParser().parseFromString(html, "text/html");
-
-    return [...doc.querySelectorAll("a[href]")]
-      .map(a => (a.getAttribute("href") || "").trim())
-      .filter(Boolean)
-      .map(href => {
-        try {
-          return new URL(href, baseUrl).toString();
-        } catch {
-          return href;
-        }
-      });
-  } catch (e) {
-    console.warn("[Support Toolkit] Failed to parse HTML for URLs", e);
-    return [];
-  }
-}
-
-
-function dedupePreserveOrder(arr) {
-  const seen = new Set();
-  const out = [];
-  for (const x of arr) {
-    const v = String(x || "").trim();
-    if (!v || seen.has(v)) continue;
-    seen.add(v);
-    out.push(v);
-  }
-  return out;
-}
-
-
-
 // ===== KEYBOARD SHORTCUTS HANDLER =====
 chrome.commands.onCommand.addListener(async (command) => {
   console.log('[Support Toolkit] Command received:', command);
-
+  
   try {
+    // ✅ UPDATED open-lp-urls: read selection from DOM (no manual copy)
     if (command === "open-lp-urls") {
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-
-      if (!tab?.id) {
-        showNotification("Support Toolkit", "No active tab found.");
+      const [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (!currentTab?.id) {
+        showNotification('Support Toolkit', 'No active tab found');
         return;
       }
 
-      // 1) Try the content-script path first (most reliable if it's injected)
-      let selectionResp = null;
-      try {
-        selectionResp = await chrome.tabs.sendMessage(tab.id, { type: "GET_SELECTION_DATA" });
-      } catch (e) {
-        // ignore and fallback
-      }
+      // Read selection from page (works when selection exists; uses allFrames for iframes)
+      const injected = await chrome.scripting.executeScript({
+        target: { tabId: currentTab.id, allFrames: true },
+        func: () => {
+          function getSelectionHtml(sel) {
+            if (!sel || sel.rangeCount === 0) return "";
+            const range = sel.getRangeAt(0).cloneContents();
+            const div = document.createElement("div");
+            div.appendChild(range);
+            return div.innerHTML || "";
+          }
 
-      // 2) Fallback to executeScript in all frames (works when no content script)
-      if (!selectionResp?.ok) {
-        try {
-          const results = await chrome.scripting.executeScript({
-            target: { tabId: tab.id, allFrames: true },
-            func: () => {
-              function getSelectionHtml(sel) {
-                if (!sel || sel.rangeCount === 0) return "";
-                const range = sel.getRangeAt(0).cloneContents();
-                const div = document.createElement("div");
-                div.appendChild(range);
-                return div.innerHTML || "";
-              }
+          function findClosestTable(sel) {
+            if (!sel || sel.rangeCount === 0) return null;
+            let node = sel.getRangeAt(0).commonAncestorContainer;
+            if (node?.nodeType === Node.TEXT_NODE) node = node.parentElement;
+            if (!(node instanceof Element)) return null;
+            return node.closest("table");
+          }
 
-              function findClosestTable(sel) {
-                if (!sel || sel.rangeCount === 0) return null;
-                let node = sel.getRangeAt(0).commonAncestorContainer;
-                if (node?.nodeType === Node.TEXT_NODE) node = node.parentElement;
-                if (!(node instanceof Element)) return null;
-                return node.closest("table");
-              }
+          const sel = window.getSelection();
+          const text = sel ? sel.toString() : "";
+          const html = getSelectionHtml(sel);
+          const table = findClosestTable(sel);
 
-              const sel = window.getSelection();
-              const text = sel ? sel.toString() : "";
-              const html = getSelectionHtml(sel);
-              const table = findClosestTable(sel);
-
-              return {
-                ok: true,
-                text,
-                html,
-                tableHtml: table ? table.outerHTML : "",
-                hasSelection: Boolean((text && text.trim()) || (html && html.trim()))
-              };
-            }
-          });
-
-          selectionResp = results?.map(r => r.result).find(r => r?.ok && r.hasSelection) || null;
-        } catch (e) {
-          showNotification("Support Toolkit", "Could not read selection on this page.");
-          return;
+          return {
+            ok: true,
+            hasSelection: Boolean((text && text.trim()) || (html && html.trim())),
+            text,
+            html,
+            tableHtml: table ? table.outerHTML : ""
+          };
         }
-      }
-
-      if (!selectionResp?.ok || !selectionResp.hasSelection) {
-        showNotification("Support Toolkit", "No selection found. Select the table/text first.");
-        return;
-      }
-
-      // Extract URLs from anchors + text (dedupe like GUI)
-      const htmlToParse = selectionResp.tableHtml || selectionResp.html || "";
-      const urlsFromHtml = extractUrlsFromHtml(htmlToParse, tab.url);
-      const urlsFromText = extractAll(selectionResp.text || "");
-
-      const urls = dedupePreserveOrder([...urlsFromHtml, ...urlsFromText]);
-
-      if (!urls.length) {
-        showNotification("Support Toolkit", "No URLs found in selection.");
-        return;
-      }
-
-      const jobId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
-
-      showNotification("Support Toolkit", `Opening ${urls.length} tab(s)…`);
-
-      const result = await openAndGroupInBackground({
-        urls,
-        windowId: tab.windowId,
-        delayMs: 0,
-        jobId
       });
 
-      showNotification("Support Toolkit", `Opened ${result.count} tab(s) and grouped as "Failed LP".`);
-    }
+      const picked = injected?.map(r => r.result).find(r => r?.ok && r.hasSelection);
 
+      if (!picked) {
+        showNotification('Support Toolkit', 'No selection found. Select the table/text first.');
+        return;
+      }
 
-    else if (command === "format-company-batch") {
+      // Extract URLs from <a href> + raw URLs in text, then dedupe
+      const htmlToParse = picked.tableHtml || picked.html || "";
+      const urlsFromHtml = extractUrlsFromHtml(htmlToParse);
+      const urlsFromText = extractAll(picked.text || "");
+      const urls = unique([...urlsFromHtml, ...urlsFromText]);
+
+      if (!urls.length) {
+        showNotification('Support Toolkit', 'No URLs found in selection');
+        return;
+      }
+
+      const windowId = currentTab.windowId;
+      const jobId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+      
+      showNotification('Support Toolkit', `Opening ${urls.length} tab(s)...`);
+      
+      const result = await openAndGroupInBackground({ urls, windowId, delayMs: 0, jobId });
+      showNotification('Support Toolkit', `Opened ${result.count} tab(s) and grouped as "Failed LP"`);
+      
+    } else if (command === "format-company-batch") {
       const [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-
+      
       const results = await chrome.scripting.executeScript({
         target: { tabId: currentTab.id },
         func: async () => {
@@ -386,7 +343,7 @@ chrome.commands.onCommand.addListener(async (command) => {
             // Copy selected text
             document.execCommand('copy');
             await new Promise(resolve => setTimeout(resolve, 100));
-
+            
             const text = await navigator.clipboard.readText();
             return { success: true, text };
           } catch (e) {
@@ -413,7 +370,7 @@ chrome.commands.onCommand.addListener(async (command) => {
       }
 
       const tsv = rowsToTSV([], rows);
-
+      
       await chrome.scripting.executeScript({
         target: { tabId: currentTab.id },
         func: async (tsvData) => {
@@ -426,7 +383,7 @@ chrome.commands.onCommand.addListener(async (command) => {
 
     } else if (command === "format-media-errors") {
       const [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-
+      
       const results = await chrome.scripting.executeScript({
         target: { tabId: currentTab.id },
         func: async () => {
@@ -434,7 +391,7 @@ chrome.commands.onCommand.addListener(async (command) => {
             // Copy selected text
             document.execCommand('copy');
             await new Promise(resolve => setTimeout(resolve, 100));
-
+            
             const text = await navigator.clipboard.readText();
             return { success: true, text };
           } catch (e) {

@@ -1,5 +1,5 @@
 // content-selection.js
-// Reads current selection (text + html). If selection is in/contains a table, return that table's HTML too.
+// Reads selection (text + HTML). If selection is inside a table, returns full table HTML.
 
 function getSelectionHtml(selection) {
   if (!selection || selection.rangeCount === 0) return "";
@@ -33,7 +33,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       text,
       html,
       tableHtml: table ? table.outerHTML : "",
-      hasSelection: Boolean(text || html)
+      hasSelection: Boolean((text && text.trim()) || (html && html.trim()))
     });
   } catch (e) {
     sendResponse({ ok: false, error: e?.message || String(e) });
