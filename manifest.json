@@ -1,33 +1,21 @@
 {
   "name": "Support Toolkit",
   "description": "Bulk open URLs, group them under 'Failed LP', and format Grafana data to TSV for spreadsheets.",
-  "version": "1.4.2",
+  "version": "1.4.4",
   "manifest_version": 3,
   "permissions": [
     "tabs",
     "tabGroups",
-    "clipboardRead",
-    "clipboardWrite",
     "notifications",
     "scripting",
-    "activeTab",
-    "storage"
+    "storage",
+    "clipboardRead",
+    "clipboardWrite"
   ],
   "host_permissions": [
-    "<all_urls>"
-  ],
-  "content_scripts": [
-    {
-      "matches": [
-        "<all_urls>"
-      ],
-      "js": [
-        "content-selection.js"
-      ],
-      "run_at": "document_idle",
-      "all_frames": true,
-      "match_about_blank": true
-    }
+    "https://idomoo.pagerduty.com/*",
+    "https://idomoo.grafana.net/*",
+    "https://app.alertops.com/*"
   ],
   "icons": {
     "16": "icon.png",

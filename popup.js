@@ -28,7 +28,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Load shortcuts on popup open
   loadShortcuts();
 
   // ===== Tabs =====
@@ -39,43 +38,33 @@ document.addEventListener('DOMContentLoaded', () => {
       document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
       tab.classList.add('active');
       document.getElementById(`${targetTab}-content`).classList.add('active');
-      try { localStorage.setItem('activeTab', targetTab); } catch { }
+      
+      // Use chrome.storage.local instead of localStorage
+      chrome.storage.local.set({ activeTab: targetTab });
       refreshRunningUI();
     });
   });
 
-  try {
-    const last = localStorage.getItem('activeTab');
+  // Restore last active tab from chrome.storage
+  chrome.storage.local.get(['activeTab'], (result) => {
+    const last = result.activeTab;
     if (last && document.getElementById(`${last}-content`)) {
       document.querySelector(`.tab[data-tab="${last}"]`)?.click();
     }
-  } catch { }
+  });
 
-  // ===== Remember the 1s Delay Toggle (NOW SHARED WITH SHORTCUT) =====
+  // ===== Remember the 1s Delay Toggle (SHARED WITH SHORTCUT) =====
   const delayCheckbox = document.getElementById('useDelay');
 
-  // Load from chrome.storage first (shared with background)
-  chrome.storage.local.get('useDelayBetweenTabs', (res) => {
+  // Load from chrome.storage
+  chrome.storage.local.get(['useDelayBetweenTabs'], (res) => {
     if (typeof res.useDelayBetweenTabs === 'boolean') {
       delayCheckbox.checked = res.useDelayBetweenTabs;
-      // mirror to localStorage for backward compatibility
-      try { localStorage.setItem('useDelayChecked', String(res.useDelayBetweenTabs)); } catch { }
-      return;
     }
-
-    // fallback to old localStorage if exists
-    try {
-      const saved = localStorage.getItem('useDelayChecked');
-      if (saved === 'true') delayCheckbox.checked = true;
-    } catch { }
-
-    // persist initial value to storage so shortcut can read it
-    chrome.storage.local.set({ useDelayBetweenTabs: delayCheckbox.checked });
   });
 
   delayCheckbox.addEventListener('change', () => {
     const enabled = delayCheckbox.checked;
-    try { localStorage.setItem('useDelayChecked', enabled); } catch { }
     chrome.storage.local.set({ useDelayBetweenTabs: enabled });
   });
 
@@ -84,7 +73,9 @@ document.addEventListener('DOMContentLoaded', () => {
     return String(s)
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;");
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
   }
 
   function truncate(s, max = 200) {
@@ -92,7 +83,6 @@ document.addEventListener('DOMContentLoaded', () => {
     return str.length > max ? str.slice(0, max) + "…" : str;
   }
 
-  // No bullets. Show up to maxLines lines. If more, add "... (+N more)".
   function buildPrettyPreview(lines, maxLines = 6) {
     if (!lines || !lines.length) return "";
     const shown = lines.slice(0, maxLines);
@@ -100,12 +90,26 @@ document.addEventListener('DOMContentLoaded', () => {
     return [...shown, more].filter(Boolean).map(escapeHtml).join("<br>");
   }
 
-  // ===== URL helpers =====
-  function sanitize(u) {
-    return u
-      .replace(/[\u200B-\u200D\uFEFF]/g, "")
-      .replace(/[),.;\]]+$/g, "")
-      .trim();
+  // ===== URL helpers with security =====
+  function sanitizeUrl(url) {
+    try {
+      const parsed = new URL(url);
+      
+      // Only allow http and https
+      if (!['http:', 'https:'].includes(parsed.protocol)) {
+        return null;
+      }
+      
+      // Block suspicious patterns
+      const suspicious = /(?:password|token|key|secret|api[_-]?key|auth|session|jwt)/i;
+      if (suspicious.test(parsed.href)) {
+        return null;
+      }
+      
+      return parsed.href;
+    } catch (e) {
+      return null;
+    }
   }
 
   function extractAll(text) {
@@ -116,11 +120,14 @@ document.addEventListener('DOMContentLoaded', () => {
     // Method 1: Standard regex for complete URLs with http/https
     const standardMatches = [...text.matchAll(/https?:\/\/[^\s"'<>()]+/gi)];
     standardMatches.forEach(m => {
-      const cleaned = sanitize(m[0]);
+      const cleaned = sanitizeUrl(m[0]
+        .replace(/[\u200B-\u200D\uFEFF]/g, "")
+        .replace(/[),.;\]]+$/g, "")
+        .trim());
       if (cleaned) urls.add(cleaned);
     });
 
-    // Method 2: Look for domain patterns (but be more careful)
+    // Method 2: Look for domain patterns
     const domainPattern = /(?:^|[^a-zA-Z0-9.-])([a-zA-Z0-9][-a-zA-Z0-9]{0,61}[a-zA-Z0-9]?\.)+(?:com|net|org|io|co|idomoo)(?:\/[^\s]*)?/gi;
     const domainMatches = [...text.matchAll(domainPattern)];
 
@@ -130,17 +137,20 @@ document.addEventListener('DOMContentLoaded', () => {
         url = 'https://' + url;
       }
 
+      const cleaned = sanitizeUrl(url);
+      if (!cleaned) return;
+
       // Only add if it's not already a substring of an existing URL
       let shouldAdd = true;
       for (const existing of urls) {
-        if (existing.includes(url.replace('https://', ''))) {
+        if (existing.includes(cleaned.replace('https://', ''))) {
           shouldAdd = false;
           break;
         }
       }
 
-      if (shouldAdd && url.includes('/')) {
-        urls.add(url);
+      if (shouldAdd && cleaned.includes('/')) {
+        urls.add(cleaned);
       }
     });
 
@@ -149,13 +159,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const unique = arr => [...new Set(arr)];
 
-  // ✅ LP preview display: host + pathname ONLY (no src / no query)
+  // Fixed: More robust URL preview formatting
   function formatUrlForPreview(u) {
     try {
       const url = new URL(u);
-      return `${url.host}${url.pathname}`;
-    } catch {
-      return u;
+      const display = `${url.host}${url.pathname}`;
+      // Truncate very long paths
+      return display.length > 200 ? display.substring(0, 200) + "…" : display;
+    } catch (e) {
+      // Fallback for invalid URLs - truncate and sanitize
+      return truncate(String(u), 200);
     }
   }
 
@@ -163,7 +176,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const counts = document.getElementById("urlCounts");
     const preview = document.getElementById("urlPreview");
 
-    if (!uniqueUrls.length) { counts.textContent = ""; preview.innerHTML = ""; return; }
+    if (!uniqueUrls.length) { 
+      counts.textContent = ""; 
+      preview.innerHTML = ""; 
+      return; 
+    }
 
     const removed = allUrls.length - uniqueUrls.length;
     counts.textContent =
@@ -171,7 +188,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     preview.innerHTML = uniqueUrls.map((u, i) => {
       const shortText = formatUrlForPreview(u);
-      return `<div class="url-line" title="${escapeHtml(u)}">${i + 1}. ${escapeHtml(shortText)}</div>`;
+      const escapedUrl = escapeHtml(u);
+      const escapedShort = escapeHtml(shortText);
+      return `<div class="url-line" title="${escapedUrl}">${i + 1}. ${escapedShort}</div>`;
     }).join("");
   }
 
@@ -197,6 +216,7 @@ document.addEventListener('DOMContentLoaded', () => {
   renderUrlPreview([], []);
 
   // ===== Open/group URLs =====
+  const MAX_TABS_PER_JOB = 100;
   let currentJobId = null;
   const runBtn = document.getElementById('runUrls');
   const stopBtn = document.getElementById('stopOpen');
@@ -232,28 +252,47 @@ document.addEventListener('DOMContentLoaded', () => {
 
   runBtn.addEventListener('click', async () => {
     const text = document.getElementById('urlInput').value || '';
-    const delayEnabled = document.getElementById('useDelay').checked;
     const urls = unique(extractAll(text));
-    if (!urls.length) { status.textContent = 'No URLs found.'; return; }
+    
+    if (!urls.length) { 
+      status.textContent = 'No valid URLs found.'; 
+      return; 
+    }
+
+    if (urls.length > MAX_TABS_PER_JOB) {
+      status.textContent = `Too many URLs (${urls.length}). Maximum is ${MAX_TABS_PER_JOB}.`;
+      return;
+    }
 
     const jobId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
     currentJobId = jobId;
-    setRunning(true, urls.length);
+    
+    // Get delay setting from storage
+    chrome.storage.local.get(['useDelayBetweenTabs'], async (result) => {
+      const delayEnabled = result.useDelayBetweenTabs || false;
+      setRunning(true, urls.length);
 
-    const [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    const windowId = currentTab.windowId;
+      const [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      const windowId = currentTab.windowId;
 
-    chrome.runtime.sendMessage({
-      type: "OPEN_URLS",
-      payload: { urls, windowId, delayMs: delayEnabled ? 1000 : 0, jobId }
-    }, (resp) => {
-      if (!resp) return;
-      setRunning(false);
-      status.textContent = resp.ok
-        ? `${resp.cancelled ? 'Stopped early.' : 'Done.'} Opened ${resp.count} tab(s)${resp.cancelled ? '' : ' (some URLs may be skipped if non-retryable)'}.
-          Grouped as "Failed LP".`
-        : `Error: ${resp.error}`;
-      currentJobId = null;
+      chrome.runtime.sendMessage({
+        type: "OPEN_URLS",
+        payload: { urls, windowId, delayMs: delayEnabled ? 1000 : 0, jobId }
+      }, (resp) => {
+        if (!resp) {
+          status.textContent = 'Error: No response from background script';
+          setRunning(false);
+          currentJobId = null;
+          return;
+        }
+        
+        setRunning(false);
+        status.textContent = resp.ok
+          ? `${resp.cancelled ? 'Stopped early.' : 'Done.'} Opened ${resp.count} tab(s)${resp.cancelled ? '' : ' (some URLs may be skipped if invalid)'}.
+            Grouped as "Failed LP".`
+          : `Error: ${resp.error}`;
+        currentJobId = null;
+      });
     });
   });
 
@@ -273,7 +312,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const lines = normalizeLines(raw);
     if (!lines.length) return [];
     const headA = (lines[0] || "").toLowerCase(), headB = (lines[1] || "").toLowerCase();
-    let start = 0; if (headA === "company" && headB === "count") start = 2;
+    let start = 0; 
+    if (headA === "company" && headB === "count") start = 2;
     const rows = [];
     for (let i = start; i < lines.length; i += 2) {
       if (!lines[i]) break;
@@ -299,15 +339,16 @@ document.addEventListener('DOMContentLoaded', () => {
     for (let i = start; i < lines.length; i += 3) {
       const v = lines[i], e = lines[i + 1], c = lines[i + 2];
       if (!v || !e || !c) break;
-      rows.push([v, e, c]); // Version, Error, Count
+      rows.push([v, e, c]);
     }
     return rows;
   }
 
   function tableToHTML(headers, rows) {
-    const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const esc = s => escapeHtml(String(s));
     const th = headers.length
-      ? `<thead><tr>${headers.map(h => `<th style="border:1px solid #000;padding:6px 8px;text-align:left;">${esc(h)}</th>`).join("")}</tr></thead>` : "";
+      ? `<thead><tr>${headers.map(h => `<th style="border:1px solid #000;padding:6px 8px;text-align:left;">${esc(h)}</th>`).join("")}</tr></thead>` 
+      : "";
     const tb = `<tbody>${rows.map(r => `<tr>${r.map(c => `<td style="border:1px solid #000;padding:6px 8px;vertical-align:top;">${esc(c)}</td>`).join("")}</tr>`).join("")}</tbody>`;
     return `<!doctype html><html><body><table style="border-collapse:collapse;">${th}${tb}</table></body></html>`;
   }
@@ -331,7 +372,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const blobTxt = new Blob([tsv], { type: "text/plain" });
       await navigator.clipboard.write([new ClipboardItem({ "text/html": blobHtml, "text/plain": blobTxt })]);
     } else {
-      await navigator.clipboard.writeText(tsv); // fallback
+      await navigator.clipboard.writeText(tsv);
     }
     return { tsvLines: tsv.split("\n").length };
   }
@@ -352,10 +393,16 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       let source = (document.getElementById('grafanaInput').value || "").trim();
       if (!source) source = await navigator.clipboard.readText();
-      if (!source) { out.textContent = "Nothing to format. Paste text or copy from Grafana first."; return; }
+      if (!source) { 
+        out.textContent = "Nothing to format. Paste text or copy from Grafana first."; 
+        return; 
+      }
 
       const rows = parseCompanyCount(source);
-      if (!rows.length) { out.textContent = "Could not parse any rows (expected Company/Count pairs)."; return; }
+      if (!rows.length) { 
+        out.textContent = "Could not parse any rows (expected Company/Count pairs)."; 
+        return; 
+      }
 
       await copyTSVOnly([], rows);
 
@@ -375,10 +422,16 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       let source = (document.getElementById('grafanaInput').value || "").trim();
       if (!source) source = await navigator.clipboard.readText();
-      if (!source) { out.textContent = "Nothing to format. Paste text or copy from Grafana first."; return; }
+      if (!source) { 
+        out.textContent = "Nothing to format. Paste text or copy from Grafana first."; 
+        return; 
+      }
 
       const rowsVEC = parseVersionErrorCount(source);
-      if (!rowsVEC.length) { out.textContent = "Could not parse any 3-line groups (Version, Error, Count)."; return; }
+      if (!rowsVEC.length) { 
+        out.textContent = "Could not parse any 3-line groups (Version, Error, Count)."; 
+        return; 
+      }
 
       const finalRows = rowsVEC.map(([version, error, count]) => [error, version, count]);
       await copyTableHTMLPlusTSV([], finalRows);
@@ -399,7 +452,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // ✅ On popup open (or reopen), sync Stop/Run with background state
+  // On popup open, sync Stop/Run with background state
   refreshRunningUI();
 
 });

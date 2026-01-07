@@ -1,22 +1,41 @@
 // background.js
 // Robust opening with per-URL retries + cancel support + keyboard shortcuts
+// Fixed: Memory leaks, rate limiting, job cleanup, security hardening
 
 // Track running jobs so we can cancel mid-loop
-const jobs = new Map(); // jobId -> { cancelled: boolean }
+const jobs = new Map(); // jobId -> { cancelled: boolean, timestamp: number }
 
+// Constants
+const MAX_TABS_PER_JOB = 100;
+const JOB_CLEANUP_INTERVAL = 300000; // 5 minutes
+const JOB_MAX_AGE = 3600000; // 1 hour
+
+// Periodic cleanup of orphaned jobs
+setInterval(() => {
+  const now = Date.now();
+  for (const [jobId, job] of jobs.entries()) {
+    if (job.timestamp && now - job.timestamp > JOB_MAX_AGE) {
+      console.log('[Support Toolkit] Cleaning up old job:', jobId);
+      jobs.delete(jobId);
+    }
+  }
+}, JOB_CLEANUP_INTERVAL);
+
+// Fixed sleep function - no memory leak
 function sleep(ms, jobId) {
   return new Promise((resolve) => {
-    const t = setTimeout(() => resolve(true), ms);
-    // light cancel polling; if cancelled, resolve early
-    const check = () => {
+    const timeoutId = setTimeout(() => {
+      clearInterval(intervalId);
+      resolve(true);
+    }, ms);
+    
+    const intervalId = setInterval(() => {
       if (jobs.get(jobId)?.cancelled) {
-        clearTimeout(t);
+        clearTimeout(timeoutId);
+        clearInterval(intervalId);
         resolve(false);
-      } else {
-        setTimeout(check, 50);
       }
-    };
-    setTimeout(check, 50);
+    }, 50);
   });
 }
 
@@ -27,26 +46,56 @@ function isTransientTabError(errMsg = "") {
   );
 }
 
+// Security: Validate and sanitize URLs
+function sanitizeUrl(url) {
+  try {
+    const parsed = new URL(url);
+    
+    // Only allow http and https
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      console.warn('[Support Toolkit] Blocked non-http(s) protocol:', parsed.protocol);
+      return null;
+    }
+    
+    // Block suspicious patterns (tokens, keys, passwords in URLs)
+    const suspicious = /(?:password|token|key|secret|api[_-]?key|auth|session|jwt)/i;
+    if (suspicious.test(parsed.href)) {
+      console.warn('[Support Toolkit] Blocked suspicious URL pattern');
+      return null;
+    }
+    
+    return parsed.href;
+  } catch (e) {
+    console.warn('[Support Toolkit] Invalid URL:', url);
+    return null;
+  }
+}
+
 // Create a tab with retries/backoff. Returns the Tab or null (skipped), never throws.
 async function createTabWithRetry({ url, windowId, jobId, maxRetries = 20 }) {
+  // Validate URL first
+  const cleanUrl = sanitizeUrl(url);
+  if (!cleanUrl) {
+    return null;
+  }
+  
   let attempt = 0;
   while (true) {
     if (jobs.get(jobId)?.cancelled) return null;
 
     try {
-      const tab = await chrome.tabs.create({ url, active: false, windowId });
+      const tab = await chrome.tabs.create({ url: cleanUrl, active: false, windowId });
       return tab; // success
     } catch (e) {
       const msg = e?.message || String(e);
       // Retry transient errors; skip others
       if (isTransientTabError(msg) && attempt < maxRetries) {
-        // simple backoff: 100ms + 150ms*attempt, capped at ~2s
         const waitMs = Math.min(2000, 100 + attempt * 150);
         await sleep(waitMs, jobId);
         attempt++;
         continue;
       } else {
-        console.warn("[Support Toolkit] Skipping URL due to non-retryable error:", url, msg);
+        console.warn('[Support Toolkit] Skipping URL due to non-retryable error:', cleanUrl, msg);
         return null;
       }
     }
@@ -54,8 +103,13 @@ async function createTabWithRetry({ url, windowId, jobId, maxRetries = 20 }) {
 }
 
 async function openAndGroupInBackground({ urls, windowId, delayMs, jobId }) {
+  // Validate tab count limit
+  if (urls.length > MAX_TABS_PER_JOB) {
+    throw new Error(`Cannot open more than ${MAX_TABS_PER_JOB} tabs at once. Found ${urls.length} URLs.`);
+  }
+  
   const tabIds = [];
-  jobs.set(jobId, { cancelled: false });
+  jobs.set(jobId, { cancelled: false, timestamp: Date.now() });
 
   try {
     for (const u of urls) {
@@ -78,7 +132,7 @@ async function openAndGroupInBackground({ urls, windowId, delayMs, jobId }) {
         groupId = await chrome.tabs.group({ tabIds, createProperties: { windowId } });
         await chrome.tabGroups.update(groupId, { title: "Failed LP", color: "red" });
       } catch (e) {
-        console.warn("[Support Toolkit] Grouping failed:", e?.message || e);
+        console.warn('[Support Toolkit] Grouping failed:', e?.message || e);
       }
     }
 
@@ -98,15 +152,14 @@ function extractAll(text) {
   // Method 1: Standard regex for complete URLs with http/https
   const standardMatches = [...text.matchAll(/https?:\/\/[^\s"'<>()]+/gi)];
   standardMatches.forEach(m => {
-    const cleaned = m[0]
+    const cleaned = sanitizeUrl(m[0]
       .replace(/[\u200B-\u200D\uFEFF]/g, "")
       .replace(/[),.;\]]+$/g, "")
-      .trim();
+      .trim());
     if (cleaned) urls.add(cleaned);
   });
   
   // Method 2: Look for domain patterns (but be more careful)
-  // Only match if it looks like a full subdomain + domain pattern
   const domainPattern = /(?:^|[^a-zA-Z0-9.-])([a-zA-Z0-9][-a-zA-Z0-9]{0,61}[a-zA-Z0-9]?\.)+(?:com|net|org|io|co|idomoo)(?:\/[^\s]*)?/gi;
   const domainMatches = [...text.matchAll(domainPattern)];
   
@@ -116,25 +169,27 @@ function extractAll(text) {
       url = 'https://' + url;
     }
     
+    const cleaned = sanitizeUrl(url);
+    if (!cleaned) return;
+    
     // Only add if it's not already a substring of an existing URL
     let shouldAdd = true;
     for (const existing of urls) {
-      if (existing.includes(url.replace('https://', ''))) {
+      if (existing.includes(cleaned.replace('https://', ''))) {
         shouldAdd = false;
         break;
       }
     }
     
-    if (shouldAdd && url.includes('/')) {
-      // Has a path, likely a real URL
-      urls.add(url);
+    if (shouldAdd && cleaned.includes('/')) {
+      urls.add(cleaned);
     }
   });
   
   return [...urls];
 }
 
-// ✅ ADDED: Extract URLs from anchor tags in selected HTML/table HTML
+// ✅ Extract URLs from anchor tags in selected HTML/table HTML
 function extractUrlsFromHtml(html) {
   if (!html) return [];
 
@@ -144,7 +199,8 @@ function extractUrlsFromHtml(html) {
     return [...doc.querySelectorAll("a[href]")]
       .map(a => a.getAttribute("href"))
       .filter(Boolean)
-      .map(href => href.trim());
+      .map(href => sanitizeUrl(href.trim()))
+      .filter(Boolean); // Remove null values from sanitizeUrl
   } catch (e) {
     console.warn("[Support Toolkit] Failed to parse HTML for URLs", e);
     return [];
@@ -264,7 +320,6 @@ chrome.commands.onCommand.addListener(async (command) => {
   console.log('[Support Toolkit] Command received:', command);
   
   try {
-    // ✅ UPDATED open-lp-urls: read selection from DOM (no manual copy)
     if (command === "open-lp-urls") {
       const [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true });
       if (!currentTab?.id) {
@@ -272,7 +327,7 @@ chrome.commands.onCommand.addListener(async (command) => {
         return;
       }
 
-      // Read selection from page (works when selection exists; uses allFrames for iframes)
+      // Read selection from page
       const injected = await chrome.scripting.executeScript({
         target: { tabId: currentTab.id, allFrames: true },
         func: () => {
@@ -305,9 +360,17 @@ chrome.commands.onCommand.addListener(async (command) => {
             tableHtml: table ? table.outerHTML : ""
           };
         }
+      }).catch(err => {
+        console.error('[Support Toolkit] Script injection failed:', err);
+        return null;
       });
 
-      const picked = injected?.map(r => r.result).find(r => r?.ok && r.hasSelection);
+      if (!injected || injected.length === 0) {
+        showNotification('Support Toolkit', 'Failed to read selection. Try refreshing the page.');
+        return;
+      }
+
+      const picked = injected.map(r => r.result).find(r => r?.ok && r.hasSelection);
 
       if (!picked) {
         showNotification('Support Toolkit', 'No selection found. Select the table/text first.');
@@ -321,7 +384,12 @@ chrome.commands.onCommand.addListener(async (command) => {
       const urls = unique([...urlsFromHtml, ...urlsFromText]);
 
       if (!urls.length) {
-        showNotification('Support Toolkit', 'No URLs found in selection');
+        showNotification('Support Toolkit', 'No valid URLs found in selection');
+        return;
+      }
+
+      if (urls.length > MAX_TABS_PER_JOB) {
+        showNotification('Support Toolkit', `Too many URLs (${urls.length}). Maximum is ${MAX_TABS_PER_JOB}.`);
         return;
       }
 
@@ -340,7 +408,6 @@ chrome.commands.onCommand.addListener(async (command) => {
         target: { tabId: currentTab.id },
         func: async () => {
           try {
-            // Copy selected text
             document.execCommand('copy');
             await new Promise(resolve => setTimeout(resolve, 100));
             
@@ -350,10 +417,13 @@ chrome.commands.onCommand.addListener(async (command) => {
             return { success: false, error: e.message };
           }
         }
+      }).catch(err => {
+        console.error('[Support Toolkit] Script execution failed:', err);
+        return [{ result: { success: false, error: err.message } }];
       });
 
       if (!results?.[0]?.result?.success) {
-        showNotification('Support Toolkit', 'Unable to copy selection');
+        showNotification('Support Toolkit', 'Unable to copy selection. Try refreshing the page.');
         return;
       }
 
@@ -388,7 +458,6 @@ chrome.commands.onCommand.addListener(async (command) => {
         target: { tabId: currentTab.id },
         func: async () => {
           try {
-            // Copy selected text
             document.execCommand('copy');
             await new Promise(resolve => setTimeout(resolve, 100));
             
@@ -398,10 +467,13 @@ chrome.commands.onCommand.addListener(async (command) => {
             return { success: false, error: e.message };
           }
         }
+      }).catch(err => {
+        console.error('[Support Toolkit] Script execution failed:', err);
+        return [{ result: { success: false, error: err.message } }];
       });
 
       if (!results?.[0]?.result?.success) {
-        showNotification('Support Toolkit', 'Unable to copy selection');
+        showNotification('Support Toolkit', 'Unable to copy selection. Try refreshing the page.');
         return;
       }
 
