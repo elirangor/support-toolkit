@@ -28,7 +28,7 @@ function sleep(ms, jobId) {
       clearInterval(intervalId);
       resolve(true);
     }, ms);
-    
+
     const intervalId = setInterval(() => {
       if (jobs.get(jobId)?.cancelled) {
         clearTimeout(timeoutId);
@@ -50,20 +50,20 @@ function isTransientTabError(errMsg = "") {
 function sanitizeUrl(url) {
   try {
     const parsed = new URL(url);
-    
+
     // Only allow http and https
     if (!['http:', 'https:'].includes(parsed.protocol)) {
       console.warn('[Support Toolkit] Blocked non-http(s) protocol:', parsed.protocol);
       return null;
     }
-    
+
     // Block suspicious patterns (tokens, keys, passwords in URLs)
     const suspicious = /(?:password|token|key|secret|api[_-]?key|auth|session|jwt)/i;
     if (suspicious.test(parsed.href)) {
       console.warn('[Support Toolkit] Blocked suspicious URL pattern');
       return null;
     }
-    
+
     return parsed.href;
   } catch (e) {
     console.warn('[Support Toolkit] Invalid URL:', url);
@@ -78,7 +78,7 @@ async function createTabWithRetry({ url, windowId, jobId, maxRetries = 20 }) {
   if (!cleanUrl) {
     return null;
   }
-  
+
   let attempt = 0;
   while (true) {
     if (jobs.get(jobId)?.cancelled) return null;
@@ -107,7 +107,7 @@ async function openAndGroupInBackground({ urls, windowId, delayMs, jobId }) {
   if (urls.length > MAX_TABS_PER_JOB) {
     throw new Error(`Cannot open more than ${MAX_TABS_PER_JOB} tabs at once. Found ${urls.length} URLs.`);
   }
-  
+
   const tabIds = [];
   jobs.set(jobId, { cancelled: false, timestamp: Date.now() });
 
@@ -146,9 +146,9 @@ async function openAndGroupInBackground({ urls, windowId, delayMs, jobId }) {
 // ===== HELPER FUNCTIONS FOR SHORTCUTS =====
 function extractAll(text) {
   if (!text) return [];
-  
+
   const urls = new Set();
-  
+
   // Method 1: Standard regex for complete URLs with http/https
   const standardMatches = [...text.matchAll(/https?:\/\/[^\s"'<>()]+/gi)];
   standardMatches.forEach(m => {
@@ -158,20 +158,20 @@ function extractAll(text) {
       .trim());
     if (cleaned) urls.add(cleaned);
   });
-  
+
   // Method 2: Look for domain patterns (but be more careful)
   const domainPattern = /(?:^|[^a-zA-Z0-9.-])([a-zA-Z0-9][-a-zA-Z0-9]{0,61}[a-zA-Z0-9]?\.)+(?:com|net|org|io|co|idomoo)(?:\/[^\s]*)?/gi;
   const domainMatches = [...text.matchAll(domainPattern)];
-  
+
   domainMatches.forEach(m => {
     let url = m[0].replace(/^[^a-zA-Z0-9]+/, "").replace(/[),.;\]]+$/g, "").trim();
     if (!url.startsWith('http')) {
       url = 'https://' + url;
     }
-    
+
     const cleaned = sanitizeUrl(url);
     if (!cleaned) return;
-    
+
     // Only add if it's not already a substring of an existing URL
     let shouldAdd = true;
     for (const existing of urls) {
@@ -180,12 +180,12 @@ function extractAll(text) {
         break;
       }
     }
-    
+
     if (shouldAdd && cleaned.includes('/')) {
       urls.add(cleaned);
     }
   });
-  
+
   return [...urls];
 }
 
@@ -219,7 +219,7 @@ function parseCompanyCount(raw) {
   const lines = normalizeLines(raw);
   if (!lines.length) return [];
   const headA = (lines[0] || "").toLowerCase(), headB = (lines[1] || "").toLowerCase();
-  let start = 0; 
+  let start = 0;
   if (headA === "company" && headB === "count") start = 2;
   const rows = [];
   for (let i = start; i < lines.length; i += 2) {
@@ -318,7 +318,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 // ===== KEYBOARD SHORTCUTS HANDLER =====
 chrome.commands.onCommand.addListener(async (command) => {
   console.log('[Support Toolkit] Command received:', command);
-  
+
   try {
     if (command === "open-lp-urls") {
       const [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -395,22 +395,34 @@ chrome.commands.onCommand.addListener(async (command) => {
 
       const windowId = currentTab.windowId;
       const jobId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
-      
-      showNotification('Support Toolkit', `Opening ${urls.length} tab(s)...`);
-      
-      const result = await openAndGroupInBackground({ urls, windowId, delayMs: 0, jobId });
-      showNotification('Support Toolkit', `Opened ${result.count} tab(s) and grouped as "Failed LP"`);
-      
+
+      // Read delay setting (shared with popup)
+      const { useDelayBetweenTabs } = await chrome.storage.local.get(['useDelayBetweenTabs']);
+      const delayMs = useDelayBetweenTabs ? 1000 : 0;
+
+      showNotification(
+        'Support Toolkit',
+        `Opening ${urls.length} tab(s)...${delayMs ? ' (1s delay enabled)' : ''}`
+      );
+
+      const result = await openAndGroupInBackground({ urls, windowId, delayMs, jobId });
+
+      showNotification(
+        'Support Toolkit',
+        `Opened ${result.count} tab(s) and grouped as "Failed LP"${delayMs ? ' (1s delay enabled)' : ''}`
+      );
+
+
     } else if (command === "format-company-batch") {
       const [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      
+
       const results = await chrome.scripting.executeScript({
         target: { tabId: currentTab.id },
         func: async () => {
           try {
             document.execCommand('copy');
             await new Promise(resolve => setTimeout(resolve, 100));
-            
+
             const text = await navigator.clipboard.readText();
             return { success: true, text };
           } catch (e) {
@@ -440,7 +452,7 @@ chrome.commands.onCommand.addListener(async (command) => {
       }
 
       const tsv = rowsToTSV([], rows);
-      
+
       await chrome.scripting.executeScript({
         target: { tabId: currentTab.id },
         func: async (tsvData) => {
@@ -453,14 +465,14 @@ chrome.commands.onCommand.addListener(async (command) => {
 
     } else if (command === "format-media-errors") {
       const [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      
+
       const results = await chrome.scripting.executeScript({
         target: { tabId: currentTab.id },
         func: async () => {
           try {
             document.execCommand('copy');
             await new Promise(resolve => setTimeout(resolve, 100));
-            
+
             const text = await navigator.clipboard.readText();
             return { success: true, text };
           } catch (e) {
