@@ -6,7 +6,7 @@
 const jobs = new Map(); // jobId -> { cancelled: boolean, timestamp: number }
 
 // Constants
-const MAX_TABS_PER_JOB = 100;
+const MAX_TABS_PER_JOB = 40;
 const JOB_CLEANUP_INTERVAL = 300000; // 5 minutes
 const JOB_MAX_AGE = 3600000; // 1 hour
 
@@ -49,24 +49,33 @@ function isTransientTabError(errMsg = "") {
 // Security: Validate and sanitize URLs
 function sanitizeUrl(url) {
   try {
-    const parsed = new URL(url);
+    const matchesIndexId = url.match(/^(https?:\/\/[^\s"'<>()]+index\.html\?id=)([a-z0-9/]+)(.*)$/i);
+    const matchesIndexM3u8 = url.match(/^(https?:\/\/[^\s"'<>()]+index\.html\?url=https?:\/\/[^\s"'<>()]+?)([a-z0-9/]+\.m3u8)(.*)$/i);
+    let cleanUrl = null;
 
-    // Only allow http and https
-    if (!['http:', 'https:'].includes(parsed.protocol)) {
-      console.warn('[Support Toolkit] Blocked non-http(s) protocol:', parsed.protocol);
-      return null;
+    if (matchesIndexId) {
+      let base = matchesIndexId[1];
+      let hash = matchesIndexId[2];
+      // Stop at first uppercase in hash
+      const idxUp = hash.search(/[A-Z]/);
+      if (idxUp !== -1) hash = hash.slice(0, idxUp);
+      cleanUrl = base + hash;
+    } else if (matchesIndexM3u8) {
+      let base = matchesIndexM3u8[1];
+      let m3u8 = matchesIndexM3u8[2];
+      // Stop at first uppercase in m3u8 (before .m3u8)
+      const idxUp = m3u8.search(/[A-Z]/);
+      if (idxUp !== -1) m3u8 = m3u8.slice(0, idxUp);
+      // Cut after .m3u8
+      const idxM3U8 = m3u8.indexOf('.m3u8');
+      if (idxM3U8 !== -1) m3u8 = m3u8.slice(0, idxM3U8 + 6);
+      cleanUrl = base + m3u8;
     }
 
-    // Block suspicious patterns (tokens, keys, passwords in URLs)
-    const suspicious = /(?:password|token|key|secret|api[_-]?key|auth|session|jwt)/i;
-    if (suspicious.test(parsed.href)) {
-      console.warn('[Support Toolkit] Blocked suspicious URL pattern');
-      return null;
-    }
-
-    return parsed.href;
+    // Block if uppercase anywhere in result, or if didn't match
+    if (!cleanUrl || /[A-Z]/.test(cleanUrl)) return null;
+    return cleanUrl;
   } catch (e) {
-    console.warn('[Support Toolkit] Invalid URL:', url);
     return null;
   }
 }
