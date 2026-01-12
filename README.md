@@ -1,6 +1,6 @@
 # Support Toolkit - Chrome Extension
 
-🧰 A lightweight helper for daily support workflows — built to speed up Grafana report formatting and log review tasks.
+🧰 A lightweight helper for daily support workflows, designed to speed up Grafana report formatting and bulk URL handling.
 
 ## 💡 What This Solves
 
@@ -14,7 +14,7 @@ If you’re handling support dashboards and reports daily, you know the routine:
 ## ✅ Features
 
 - 📊 **Grafana → Daily Report** formatter (TSV/HTML-ready)
-- 🔗 **Open & Group URLs** by type (e.g., failed LPs)
+- 🔗 **Open & Group URLs** for failed LPs
 - 🪄 Instant clipboard import
 - 💾 Clean export-ready tables for Docs or Sheets
 - 🎨 Polished, consistent UI built for clarity
@@ -32,7 +32,7 @@ Support Toolkit includes global keyboard shortcuts for quick actions:
 
 ## 🔧 Installation
 
-1. [Download the latest release](https://github.com/elirangor/support-toolkit/releases/download/1.4.5/toolkit-v1.4.5.zip).  
+1. [Download the latest release](https://github.com/elirangor/support-toolkit/releases/download/1.4.6/toolkit-v1.4.6.zip).  
 2. Extract the `.zip` file.  
 3. Open your browser’s **Extensions page**.  
 4. Enable **Developer mode**.  
