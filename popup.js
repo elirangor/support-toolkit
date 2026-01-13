@@ -23,9 +23,6 @@ document.addEventListener('DOMContentLoaded', () => {
           if (element) {
             element.textContent = cmd.shortcut;
           }
-          if (cmd.name === 'copy-daily-report') {
-            document.getElementById('copyDailyReport')?.setAttribute('data-shortcut', cmd.shortcut);
-          }
         }
 
       });
@@ -48,7 +45,7 @@ document.addEventListener('DOMContentLoaded', () => {
     return String(n).padStart(2, '0');
   }
 
-  function getDailyReportText(d = new Date()) {
+  function getDailyReportTextFull(d = new Date()) {
     const dd = pad2(d.getDate());
     const mm = pad2(d.getMonth() + 1);
     const yy = pad2(d.getFullYear() % 100);
@@ -56,44 +53,37 @@ document.addEventListener('DOMContentLoaded', () => {
     return `Daily Report ${dd}.${mm}.${yy} ${day}`;
   }
 
-  function showDailyStatus(msg) {
-    const el = document.getElementById('dailyStatus');
-    if (!el) return;
-
-    if (!msg) {
-      // Smooth close
-      el.classList.remove('show');
-      return;
-    }
-
-    // Set text first
-    el.textContent = msg;
-
-    // Force reflow so animation always triggers
-    el.offsetHeight;
-
-    // Smooth open
-    el.classList.add('show');
+  function getDailyReportTextShort(d = new Date()) {
+    const dd = pad2(d.getDate());
+    const mm = pad2(d.getMonth() + 1);
+    const yy = pad2(d.getFullYear() % 100);
+    const day = d.toLocaleDateString('en-US', { weekday: 'short' });
+    return `Daily Report ${dd}.${mm}.${yy} ${day}`;
   }
 
-
-  // Set title on open
+  // Set title on open (SHORT weekday for UI)
   const dailyTitleEl = document.getElementById('dailyReportTitle');
   if (dailyTitleEl) {
-    dailyTitleEl.textContent = getDailyReportText();
+    dailyTitleEl.textContent = getDailyReportTextShort();
   }
 
-  // Copy on click
+  // Copy on click with visual feedback (FULL weekday for clipboard)
   const dailyBtn = document.getElementById('copyDailyReport');
   if (dailyBtn) {
     dailyBtn.addEventListener('click', async () => {
       try {
-        const text = getDailyReportText();
+        const text = getDailyReportTextFull();
         await navigator.clipboard.writeText(text);
-        showDailyStatus(`✓ Copied: ${text}`);
-        setTimeout(() => showDailyStatus(''), 1500);
+        
+        // Add copied class for visual feedback
+        dailyBtn.classList.add('copied');
+        
+        // Remove after animation
+        setTimeout(() => {
+          dailyBtn.classList.remove('copied');
+        }, 1500);
       } catch (e) {
-        showDailyStatus('Clipboard write failed.');
+        console.error('Clipboard write failed:', e);
       }
     });
   }
