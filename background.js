@@ -421,7 +421,6 @@ chrome.commands.onCommand.addListener(async (command) => {
         `Opened ${result.count} tab(s) and grouped as "Failed LP"${delayMs ? ' (1s delay enabled)' : ''}`
       );
 
-
     } else if (command === "format-company-batch") {
       const [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
@@ -529,7 +528,112 @@ chrome.commands.onCommand.addListener(async (command) => {
       });
 
       showNotification('Support Toolkit', `✓ Formatted ${finalRows.length} row(s) - HTML table copied`);
+
+    } else if (command === "copy-daily-report") {
+      const [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+      const url = currentTab?.url || "";
+      const isGmail = url.startsWith("https://mail.google.com/");
+
+      if (!currentTab?.id) {
+        showNotification("Support Toolkit", "No active tab found");
+        return;
+      }
+
+      if (!isGmail) {
+        showNotification("Support Toolkit", "Daily Report copy works only on Gmail (mail.google.com).");
+        return;
+      }
+
+      const pad2 = (n) => String(n).padStart(2, "0");
+
+      const d = new Date();
+      const dd = pad2(d.getDate());
+      const mm = pad2(d.getMonth() + 1);
+      const yy = pad2(d.getFullYear() % 100);
+      const day = d.toLocaleDateString("en-US", { weekday: "long" });
+
+      const text = `Daily Report ${dd}.${mm}.${yy} ${day}`;
+
+      // Copy + paste into focused field (Gmail compose is contenteditable)
+      const results = await chrome.scripting.executeScript({
+        target: { tabId: currentTab.id },
+        func: async (t) => {
+          let pasted = false;
+
+          // 1) Copy to clipboard
+          try {
+            await navigator.clipboard.writeText(t);
+          } catch (e) {
+            // keep going - paste might still work
+          }
+
+          // 2) Paste into the currently focused element (if possible)
+          try {
+            const el = document.activeElement;
+
+            if (el) {
+              // input / textarea
+              if (el.tagName === "INPUT" || el.tagName === "TEXTAREA") {
+                const start = el.selectionStart ?? el.value.length;
+                const end = el.selectionEnd ?? el.value.length;
+
+                const before = el.value.slice(0, start);
+                const after = el.value.slice(end);
+
+                el.value = before + t + after;
+
+                const newPos = start + t.length;
+                el.setSelectionRange?.(newPos, newPos);
+
+                el.dispatchEvent(new Event("input", { bubbles: true }));
+                el.dispatchEvent(new Event("change", { bubbles: true }));
+                pasted = true;
+              }
+              // contenteditable (Gmail compose body / subject sometimes)
+              else if (el.isContentEditable) {
+                el.focus();
+
+                // Insert at cursor (works for Gmail most of the time)
+                const ok = document.execCommand && document.execCommand("insertText", false, t);
+                if (ok) {
+                  pasted = true;
+                } else {
+                  // Fallback: Range insertion
+                  const sel = window.getSelection();
+                  if (sel && sel.rangeCount > 0) {
+                    const range = sel.getRangeAt(0);
+                    range.deleteContents();
+                    range.insertNode(document.createTextNode(t));
+                    // Move cursor after inserted text
+                    range.collapse(false);
+                    sel.removeAllRanges();
+                    sel.addRange(range);
+                    pasted = true;
+                  }
+                }
+
+                el.dispatchEvent(new Event("input", { bubbles: true }));
+              }
+            }
+          } catch (e) {
+            // ignore paste failures
+          }
+
+          return { pasted: pasted };
+        },
+        args: [text]
+      });
+
+      const pasted = !!results?.[0]?.result?.pasted;
+
+      if (pasted) {
+        showNotification("Support Toolkit", `✓ Copied + pasted: ${text}`);
+      } else {
+        showNotification("Support Toolkit", `✓ Copied: ${text} (focus a text field to auto-paste)`);
+      }
     }
+
   } catch (error) {
     console.error('[Support Toolkit] Shortcut error:', error);
     showNotification('Support Toolkit', `Error: ${error.message}`);

@@ -14,6 +14,8 @@ document.addEventListener('DOMContentLoaded', () => {
           elementId = 'shortcut-batch';
         } else if (cmd.name === 'format-media-errors') {
           elementId = 'shortcut-errors';
+        } else if (cmd.name === 'copy-daily-report') {
+          elementId = 'shortcut-daily';
         }
 
         if (elementId && cmd.shortcut) {
@@ -21,7 +23,11 @@ document.addEventListener('DOMContentLoaded', () => {
           if (element) {
             element.textContent = cmd.shortcut;
           }
+          if (cmd.name === 'copy-daily-report') {
+            document.getElementById('copyDailyReport')?.setAttribute('data-shortcut', cmd.shortcut);
+          }
         }
+
       });
     } catch (e) {
       console.error('Failed to load shortcuts:', e);
@@ -29,6 +35,68 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   loadShortcuts();
+
+  // Keep shortcuts dynamic while popup is open (updates if user changes chrome://extensions/shortcuts)
+  const shortcutsRefreshTimer = setInterval(loadShortcuts, 1000);
+  window.addEventListener('beforeunload', () => clearInterval(shortcutsRefreshTimer));
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) loadShortcuts();
+  });
+
+  // ===== Daily Report top button =====
+  function pad2(n) {
+    return String(n).padStart(2, '0');
+  }
+
+  function getDailyReportText(d = new Date()) {
+    const dd = pad2(d.getDate());
+    const mm = pad2(d.getMonth() + 1);
+    const yy = pad2(d.getFullYear() % 100);
+    const day = d.toLocaleDateString('en-US', { weekday: 'long' });
+    return `Daily Report ${dd}.${mm}.${yy} ${day}`;
+  }
+
+  function showDailyStatus(msg) {
+    const el = document.getElementById('dailyStatus');
+    if (!el) return;
+
+    if (!msg) {
+      // Smooth close
+      el.classList.remove('show');
+      return;
+    }
+
+    // Set text first
+    el.textContent = msg;
+
+    // Force reflow so animation always triggers
+    el.offsetHeight;
+
+    // Smooth open
+    el.classList.add('show');
+  }
+
+
+  // Set title on open
+  const dailyTitleEl = document.getElementById('dailyReportTitle');
+  if (dailyTitleEl) {
+    dailyTitleEl.textContent = getDailyReportText();
+  }
+
+  // Copy on click
+  const dailyBtn = document.getElementById('copyDailyReport');
+  if (dailyBtn) {
+    dailyBtn.addEventListener('click', async () => {
+      try {
+        const text = getDailyReportText();
+        await navigator.clipboard.writeText(text);
+        showDailyStatus(`✓ Copied: ${text}`);
+        setTimeout(() => showDailyStatus(''), 1500);
+      } catch (e) {
+        showDailyStatus('Clipboard write failed.');
+      }
+    });
+  }
 
   // ===== Tabs =====
   document.querySelectorAll('.tab').forEach(tab => {
@@ -38,7 +106,7 @@ document.addEventListener('DOMContentLoaded', () => {
       document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
       tab.classList.add('active');
       document.getElementById(`${targetTab}-content`).classList.add('active');
-      
+
       // Use chrome.storage.local instead of localStorage
       chrome.storage.local.set({ activeTab: targetTab });
       refreshRunningUI();
@@ -188,10 +256,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const counts = document.getElementById("urlCounts");
     const preview = document.getElementById("urlPreview");
 
-    if (!uniqueUrls.length) { 
-      counts.textContent = ""; 
-      preview.innerHTML = ""; 
-      return; 
+    if (!uniqueUrls.length) {
+      counts.textContent = "";
+      preview.innerHTML = "";
+      return;
     }
 
     const removed = allUrls.length - uniqueUrls.length;
@@ -265,10 +333,10 @@ document.addEventListener('DOMContentLoaded', () => {
   runBtn.addEventListener('click', async () => {
     const text = document.getElementById('urlInput').value || '';
     const urls = unique(extractAll(text));
-    
-    if (!urls.length) { 
-      status.textContent = 'No valid URLs found.'; 
-      return; 
+
+    if (!urls.length) {
+      status.textContent = 'No valid URLs found.';
+      return;
     }
 
     if (urls.length > MAX_TABS_PER_JOB) {
@@ -278,7 +346,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const jobId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
     currentJobId = jobId;
-    
+
     // Get delay setting from storage
     chrome.storage.local.get(['useDelayBetweenTabs'], async (result) => {
       const delayEnabled = result.useDelayBetweenTabs || false;
@@ -297,7 +365,7 @@ document.addEventListener('DOMContentLoaded', () => {
           currentJobId = null;
           return;
         }
-        
+
         setRunning(false);
         status.textContent = resp.ok
           ? `${resp.cancelled ? 'Stopped early.' : 'Done.'} Opened ${resp.count} tab(s)${resp.cancelled ? '' : ' (some URLs may be skipped if invalid)'}.
@@ -324,7 +392,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const lines = normalizeLines(raw);
     if (!lines.length) return [];
     const headA = (lines[0] || "").toLowerCase(), headB = (lines[1] || "").toLowerCase();
-    let start = 0; 
+    let start = 0;
     if (headA === "company" && headB === "count") start = 2;
     const rows = [];
     for (let i = start; i < lines.length; i += 2) {
@@ -359,7 +427,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function tableToHTML(headers, rows) {
     const esc = s => escapeHtml(String(s));
     const th = headers.length
-      ? `<thead><tr>${headers.map(h => `<th style="border:1px solid #000;padding:6px 8px;text-align:left;">${esc(h)}</th>`).join("")}</tr></thead>` 
+      ? `<thead><tr>${headers.map(h => `<th style="border:1px solid #000;padding:6px 8px;text-align:left;">${esc(h)}</th>`).join("")}</tr></thead>`
       : "";
     const tb = `<tbody>${rows.map(r => `<tr>${r.map(c => `<td style="border:1px solid #000;padding:6px 8px;vertical-align:top;">${esc(c)}</td>`).join("")}</tr>`).join("")}</tbody>`;
     return `<!doctype html><html><body><table style="border-collapse:collapse;">${th}${tb}</table></body></html>`;
@@ -405,15 +473,15 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       let source = (document.getElementById('grafanaInput').value || "").trim();
       if (!source) source = await navigator.clipboard.readText();
-      if (!source) { 
-        out.textContent = "Nothing to format. Paste text or copy from Grafana first."; 
-        return; 
+      if (!source) {
+        out.textContent = "Nothing to format. Paste text or copy from Grafana first.";
+        return;
       }
 
       const rows = parseCompanyCount(source);
-      if (!rows.length) { 
-        out.textContent = "Could not parse any rows (expected Company/Count pairs)."; 
-        return; 
+      if (!rows.length) {
+        out.textContent = "Could not parse any rows (expected Company/Count pairs).";
+        return;
       }
 
       await copyTSVOnly([], rows);
@@ -434,15 +502,15 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       let source = (document.getElementById('grafanaInput').value || "").trim();
       if (!source) source = await navigator.clipboard.readText();
-      if (!source) { 
-        out.textContent = "Nothing to format. Paste text or copy from Grafana first."; 
-        return; 
+      if (!source) {
+        out.textContent = "Nothing to format. Paste text or copy from Grafana first.";
+        return;
       }
 
       const rowsVEC = parseVersionErrorCount(source);
-      if (!rowsVEC.length) { 
-        out.textContent = "Could not parse any 3-line groups (Version, Error, Count)."; 
-        return; 
+      if (!rowsVEC.length) {
+        out.textContent = "Could not parse any 3-line groups (Version, Error, Count).";
+        return;
       }
 
       const finalRows = rowsVEC.map(([version, error, count]) => [error, version, count]);
