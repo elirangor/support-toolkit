@@ -35,7 +35,7 @@ Support Toolkit includes global keyboard shortcuts for quick actions:
 
 Install the Support Toolkit extension directly from the Chrome Web Store:
 
-1. [Open the Chrome Web Store listing](https://chromewebstore.google.com/detail/support-toolkit/jopahphnjlhnobbanhheghoedbihkljp)
+1. [Go to the Support Toolkit extension on the Chrome Web Store](https://chromewebstore.google.com/detail/support-toolkit/jopahphnjlhnobbanhheghoedbihkljp)
 2. Click **Add to Chrome**.
 3. Confirm by clicking **Add extension**.
 
@@ -50,4 +50,5 @@ The extension will be installed automatically and will update automatically when
 ---
 
 **License:** MIT 
+
 
