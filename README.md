@@ -26,17 +26,21 @@ Support Toolkit includes global keyboard shortcuts for quick actions:
 - **`Ctrl + Shift + Z`** (Mac: `Cmd + Shift + Z`) — Open & group selected LP URLs  
 - **`Ctrl + Shift + B`** (Mac: `Cmd + Shift + B`) — Format Company / Count report (TSV)  
 - **`Ctrl + Shift + E`** (Mac: `Cmd + Shift + E`) — Format Media Errors (TSV + HTML)
+- **`Ctrl + Shift + X`** (Mac: `Cmd + Shift + X`) — Copy today’s date & day to clipboard
 
 > Shortcuts can be customized in Chrome via **Extensions → Keyboard shortcuts** (`chrome://extensions/shortcuts`).
 
 
 ## 🔧 Installation
 
-1. [Download the latest release](https://github.com/elirangor/support-toolkit/releases/download/1.4.8/toolkit-v1.4.8.zip).  
-2. Extract the `.zip` file.  
-3. Open your browser’s **Extensions page**.  
-4. Enable **Developer mode**.  
-5. Click **Load unpacked** and select the extracted folder.
+Install the Support Toolkit extension directly from the Chrome Web Store:
+
+1. [Open the Chrome Web Store listing](https://chromewebstore.google.com/detail/support-toolkit/jopahphnjlhnobbanhheghoedbihkljp)
+2. Click **Add to Chrome**.
+3. Confirm by clicking **Add extension**.
+
+The extension will be installed automatically and will update automatically when new versions are released.
+
 
 ## 🔐 Permissions
 
@@ -46,3 +50,4 @@ Support Toolkit includes global keyboard shortcuts for quick actions:
 ---
 
 **License:** MIT 
+
