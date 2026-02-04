@@ -153,6 +153,10 @@ button.danger:hover {
     color: rgba(255, 255, 255, 0.7);
 }
 
+.daily-shortcut-badge:empty {
+    display: none;
+}
+
 .daily-copy-icon {
     display: inline-flex;
     align-items: center;
