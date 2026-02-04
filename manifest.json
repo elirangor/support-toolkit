@@ -36,28 +36,28 @@
         "default": "Ctrl+Shift+Z",
         "mac": "Command+Shift+Z"
       },
-      "description": "Open & group LP URLs from selection"
+      "description": "Open & group LP URLs (AlertOps only)"
     },
     "format-company-batch": {
       "suggested_key": {
-        "default": "Ctrl+Shift+S",
-        "mac": "Command+Shift+S"
+        "default": "Ctrl+Shift+B",
+        "mac": "Command+Shift+B"
       },
-      "description": "Format Company Batch from selection"
+      "description": "Format Company Batch (Grafana only)"
     },
     "format-media-errors": {
       "suggested_key": {
         "default": "Ctrl+Shift+E",
         "mac": "Command+Shift+E"
       },
-      "description": "Format Media Errors from selection"
+      "description": "Format Media Errors (Grafana only)"
     },
     "copy-daily-report": {
       "suggested_key": {
         "default": "Ctrl+Shift+X",
         "mac": "Command+Shift+X"
       },
-      "description": "Copy Daily Report date to clipboard"
+      "description": "Paste Daily Report (Gmail only)"
     }
   }
 }

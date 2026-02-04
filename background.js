@@ -1,4 +1,4 @@
-// background.js - Main entry point
+// background.js - Full file with site-specific shortcut logic and detailed notifications
 import {
   extractAll,
   extractUrlsFromHtml,
@@ -13,7 +13,7 @@ import {
 
 import { processUrlJob, cancelJob, getRunningJobIds } from './job-processor.js';
 
-// Show notification helper
+// Show notification helper with custom titles and messages
 function showNotification(title, message) {
   chrome.notifications.create({
     type: 'basic',
@@ -36,7 +36,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         sendResponse({ ok: false, error: e?.message || String(e) });
       }
     })();
-    return true; // async response
+    return true; 
   }
 
   if (msg?.type === "STOP_OPEN") {
@@ -57,15 +57,21 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 chrome.commands.onCommand.addListener(async (command) => {
   try {
     const [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!currentTab?.id) return;
+    if (!currentTab?.id || !currentTab?.url) return;
 
-    // --- SHORTCUT: Open URLs ---
+    const currentUrl = currentTab.url;
+
+    // --- SHORTCUT: Open URLs (Restricted to AlertOps) ---
     if (command === "open-lp-urls") {
+      if (!currentUrl.includes("app.alertops.com")) {
+        return showNotification('Invalid Site', 'The "Open URLs" shortcut only works on app.alertops.com.');
+      }
+
       const injected = await chrome.scripting.executeScript({
         target: { tabId: currentTab.id, allFrames: true },
         func: () => {
           const sel = window.getSelection();
-          if (!sel || sel.rangeCount === 0) return null;
+          if (!sel || sel.rangeCount === 0 || !sel.toString().trim()) return null;
 
           const range = sel.getRangeAt(0).cloneContents();
           const div = document.createElement("div");
@@ -85,79 +91,93 @@ chrome.commands.onCommand.addListener(async (command) => {
 
       const picked = injected?.map(r => r.result).find(r => r);
       if (!picked) {
-        showNotification('Support Toolkit', 'No selection found.');
-        return;
+        return showNotification('No Selection', 'Please select text containing URLs in AlertOps first.');
       }
 
       const urlsFromHtml = extractUrlsFromHtml(picked.tableHtml || picked.html || "");
       const urlsFromText = extractAll(picked.text || "");
       const urls = unique([...urlsFromHtml, ...urlsFromText]);
 
-      if (!urls.length) return showNotification('Support Toolkit', 'No valid URLs found.');
-      if (urls.length > MAX_TABS_PER_JOB) return showNotification('Support Toolkit', `Too many URLs (${urls.length}). Max ${MAX_TABS_PER_JOB}.`);
+      if (!urls.length) return showNotification('No URLs Found', 'No valid LP URLs were found in your selection.');
+      if (urls.length > MAX_TABS_PER_JOB) return showNotification('Limit Exceeded', `Found ${urls.length} URLs. Max allowed is ${MAX_TABS_PER_JOB}.`);
 
       const jobId = `${Date.now()}-shortcut`;
       const { useDelayBetweenTabs } = await chrome.storage.local.get(['useDelayBetweenTabs']);
 
-      showNotification('Support Toolkit', `Opening ${urls.length} tab(s)...`);
+      showNotification('Processing', `Opening ${urls.length} tab(s) in a new group...`);
       await processUrlJob({ urls, windowId: currentTab.windowId, delayMs: useDelayBetweenTabs ? 1000 : 0, jobId });
-      showNotification('Support Toolkit', `Finished opening ${urls.length} tabs.`);
+      showNotification('Success', `Finished opening ${urls.length} tabs.`);
 
-      // --- SHORTCUT: Format Company Batch ---
+    // --- SHORTCUT: Format Company Batch (Restricted to Grafana) ---
     } else if (command === "format-company-batch") {
+      if (!currentUrl.includes("grafana.net")) {
+        return showNotification('Invalid Site', 'Company Batch formatting only works on idomoo.grafana.net.');
+      }
+
       const text = await getSelectionText(currentTab.id);
-      if (!text) return showNotification('Support Toolkit', 'No text selected');
+      if (!text) return showNotification('No Selection', 'Please select the Grafana table text to format.');
 
       const rows = parseCompanyCount(text);
-      if (!rows.length) return showNotification('Support Toolkit', 'Invalid data format');
+      if (!rows.length) return showNotification('Parse Error', 'Selected text does not match the expected Company/Count format.');
 
       await writeToClipboard(currentTab.id, rowsToTSV([], rows));
-      showNotification('Support Toolkit', `✓ Formatted ${rows.length} rows (TSV)`);
+      showNotification('Formatted', `✓ ${rows.length} rows copied as TSV for spreadsheets.`);
 
-      // --- SHORTCUT: Format Media Errors ---
+    // --- SHORTCUT: Format Media Errors (Restricted to Grafana) ---
     } else if (command === "format-media-errors") {
+      if (!currentUrl.includes("grafana.net")) {
+        return showNotification('Invalid Site', 'Media Error formatting only works on idomoo.grafana.net.');
+      }
+
       const text = await getSelectionText(currentTab.id);
-      if (!text) return showNotification('Support Toolkit', 'No text selected');
+      if (!text) return showNotification('No Selection', 'Please select the Grafana error table text to format.');
 
       const rowsVEC = parseVersionErrorCount(text);
-      if (!rowsVEC.length) return showNotification('Support Toolkit', 'Invalid data format');
+      if (!rowsVEC.length) return showNotification('Parse Error', 'Selected text does not match the expected Media Error format.');
 
       const finalRows = rowsVEC.map(([version, error, count]) => [error, version, count]);
       await writeToClipboardHTML(currentTab.id, tableToHTML([], finalRows), rowsToTSV([], finalRows));
-      showNotification('Support Toolkit', `✓ Formatted ${finalRows.length} rows (HTML Table)`);
+      showNotification('Formatted', `✓ ${finalRows.length} rows copied (HTML Table + TSV).`);
 
-      // --- SHORTCUT: Copy Daily Report ---
+    // --- SHORTCUT: Paste Daily Report (Restricted to Gmail) ---
     } else if (command === "copy-daily-report") {
+      if (!currentUrl.includes("mail.google.com")) {
+        return showNotification('Invalid Site', 'The Daily Report shortcut only works within Gmail.');
+      }
+
       const d = new Date();
-      const text = `Daily Report ${pad2(d.getDate())}.${pad2(d.getMonth() + 1)}.${pad2(d.getFullYear() % 100)} ${d.toLocaleDateString("en-US", { weekday: "long" })}`;
+      const dateText = `Daily Report ${pad2(d.getDate())}.${pad2(d.getMonth() + 1)}.${pad2(d.getFullYear() % 100)} ${d.toLocaleDateString("en-US", { weekday: "long" })}`;
 
-      await writeToClipboard(currentTab.id, text); // Try copy
-
-      // Try simple paste via execCommand
       await chrome.scripting.executeScript({
         target: { tabId: currentTab.id },
         func: (t) => {
-          document.execCommand("insertText", false, t);
+          const success = document.execCommand("insertText", false, t);
+          if (!success) {
+            const activeEl = document.activeElement;
+            if (activeEl && (activeEl.contentEditable === 'true' || activeEl.tagName === 'TEXTAREA')) {
+              activeEl.innerText += t;
+            }
+          }
         },
-        args: [text]
+        args: [dateText]
       });
 
-      showNotification("Support Toolkit", `✓ Copied: ${text}`);
+      showNotification("Success", `✓ Inserted current date into Gmail.`);
     }
 
   } catch (error) {
-    console.error(error);
+    console.error("Shortcut Error:", error);
+    showNotification('System Error', 'An unexpected error occurred while processing the shortcut.');
   }
 });
 
-// Helpers for Shortcuts (to keep main listener clean)
+// Helpers for Shortcuts to safely capture text
 async function getSelectionText(tabId) {
   const results = await chrome.scripting.executeScript({
     target: { tabId },
-    func: async () => {
-      document.execCommand('copy'); // Force copy to clipboard first
-      await new Promise(r => setTimeout(r, 100));
-      return navigator.clipboard.readText();
+    func: () => {
+      const selection = window.getSelection().toString().trim();
+      return selection || null;
     }
   }).catch(() => null);
   return results?.[0]?.result || null;
