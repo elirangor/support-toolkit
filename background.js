@@ -2,11 +2,24 @@
 // Robust opening with per-URL retries + cancel support + keyboard shortcuts
 // Fixed: Memory leaks, rate limiting, job cleanup, security hardening
 
+import {
+  MAX_TABS_PER_JOB,
+  sanitizeUrl,
+  sleep,
+  extractAll,
+  extractUrlsFromHtml,
+  unique,
+  parseCompanyCount,
+  parseVersionErrorCount,
+  rowsToTSV,
+  tableToHTML,
+  pad2
+} from './utils.js';
+
 // Track running jobs so we can cancel mid-loop
 const jobs = new Map(); // jobId -> { cancelled: boolean, timestamp: number }
 
 // Constants
-const MAX_TABS_PER_JOB = 40;
 const JOB_CLEANUP_INTERVAL = 120000; // 2 minutes
 const JOB_MAX_AGE = 900000; // 15 minutess
 
@@ -21,141 +34,11 @@ setInterval(() => {
   }
 }, JOB_CLEANUP_INTERVAL);
 
-// Fixed sleep function - no memory leak
-function sleep(ms, jobId) {
-  return new Promise((resolve) => {
-    const timeoutId = setTimeout(() => {
-      clearInterval(intervalId);
-      resolve(true);
-    }, ms);
-
-    const intervalId = setInterval(() => {
-      if (jobs.get(jobId)?.cancelled) {
-        clearTimeout(timeoutId);
-        clearInterval(intervalId);
-        resolve(false);
-      }
-    }, 50);
-  });
-}
-
 // Detect errors that are safe to retry
 function isTransientTabError(errMsg = "") {
   return /Tabs cannot be edited right now|user may be dragging a tab|currently being dragged|No browser window/i.test(
     String(errMsg)
   );
-}
-
-// Security: Validate and sanitize URLs
-function sanitizeUrl(url) {
-  try {
-    // First, clean up the URL: fix malformed ?url= that should be &url=
-    let cleanedUrl = url;
-    
-    // Find first ? and replace subsequent ? with &
-    const firstQuestionMark = cleanedUrl.indexOf('?');
-    if (firstQuestionMark !== -1) {
-      const beforeQuery = cleanedUrl.substring(0, firstQuestionMark + 1);
-      const afterQuery = cleanedUrl.substring(firstQuestionMark + 1);
-      // Replace any ? in query string with &
-      cleanedUrl = beforeQuery + afterQuery.replace(/\?/g, '&');
-    }
-    
-    // Pattern 1: index.html?id=XXXXX (with potential query params after)
-    const matchesIndexId = cleanedUrl.match(/^(https?:\/\/[^\s"'<>()]+index\.html\?id=)([^&\s]+)(.*)$/i);
-    
-    // Pattern 2: ANY path?url=https://...XXXXX.m3u8 (stops at first uppercase in the video path)
-    // UPDATED: Removed hardcoded "index.html" requirement
-    const matchesIndexM3u8 = cleanedUrl.match(/^(https?:\/\/[^\s"'<>()]+?\?url=https?:\/\/[^\s"'<>()]+?)([a-z0-9/]+\.m3u8)(.*)$/i);
-    
-    let finalUrl = null;
-
-    if (matchesIndexId) {
-      let base = matchesIndexId[1];
-      let idPart = matchesIndexId[2];
-      let queryParams = matchesIndexId[3]; // Everything after the ID
-      
-      // Stop at first uppercase in the ID itself
-      const idxUp = idPart.search(/[A-Z]/);
-      if (idxUp !== -1) idPart = idPart.slice(0, idxUp);
-      
-      // If there's a &url= parameter, extract and clean the m3u8 URL
-      if (queryParams.includes('&url=')) {
-        const urlMatch = queryParams.match(/(&url=https?:\/\/[^\s&]+?)([a-z0-9/]+\.m3u8)/i);
-        if (urlMatch) {
-          const urlBase = urlMatch[1];
-          let m3u8Path = urlMatch[2];
-          
-          // Stop at first uppercase in m3u8 filename
-          const m3u8UpIdx = m3u8Path.search(/[A-Z]/);
-          if (m3u8UpIdx !== -1) m3u8Path = m3u8Path.slice(0, m3u8UpIdx);
-          
-          // Cut after .m3u8 extension
-          const m3u8Idx = m3u8Path.indexOf('.m3u8');
-          if (m3u8Idx !== -1) m3u8Path = m3u8Path.slice(0, m3u8Idx + 6);
-          
-          // Reconstruct: keep other query params before &url=
-          const beforeUrl = queryParams.substring(0, queryParams.indexOf('&url='));
-          finalUrl = base + idPart + beforeUrl + urlBase + m3u8Path;
-        } else {
-          finalUrl = base + idPart + queryParams;
-        }
-      } else {
-        finalUrl = base + idPart + queryParams;
-      }
-      
-    } else if (matchesIndexM3u8) {
-      let base = matchesIndexM3u8[1];
-      let m3u8 = matchesIndexM3u8[2];
-      
-      // Stop at first uppercase in m3u8 path (before .m3u8)
-      const idxUp = m3u8.search(/[A-Z]/);
-      if (idxUp !== -1) m3u8 = m3u8.slice(0, idxUp);
-      
-      // Cut after .m3u8
-      const idxM3U8 = m3u8.indexOf('.m3u8');
-      if (idxM3U8 !== -1) m3u8 = m3u8.slice(0, idxM3U8 + 6);
-      
-      finalUrl = base + m3u8;
-    }
-
-    // Final validation: block if uppercase in the video ID/hash portion
-    // But allow uppercase in query parameters (like &l=EN)
-    if (!finalUrl) return null;
-    
-    // Check for uppercase only in the hash/ID part, not in query params
-    try {
-      const urlObj = new URL(finalUrl);
-      const idParam = urlObj.searchParams.get('id');
-      const urlParam = urlObj.searchParams.get('url');
-      
-      // If there's an ID param with uppercase in the video hash, reject
-      if (idParam) {
-        // Extract just the video hash part (after project/account IDs)
-        const idParts = idParam.split('/');
-        if (idParts.length > 0) {
-          const videoHash = idParts[idParts.length - 1];
-          if (/[A-Z]/.test(videoHash)) return null;
-        }
-      }
-      
-      if (urlParam) {
-        // Extract the video hash from the URL parameter
-        const urlParts = urlParam.split('/');
-        const lastPart = urlParts[urlParts.length - 1];
-        const videoHash = lastPart.replace('.m3u8', '');
-        if (/[A-Z]/.test(videoHash)) return null;
-      }
-    } catch (urlParseError) {
-      // If URL parsing fails, return null
-      return null;
-    }
-    
-    return finalUrl;
-    
-  } catch (e) {
-    return null;
-  }
 }
 
 // Create a tab with retries/backoff. Returns the Tab or null (skipped), never throws.
@@ -178,7 +61,8 @@ async function createTabWithRetry({ url, windowId, jobId, maxRetries = 20 }) {
       // Retry transient errors; skip others
       if (isTransientTabError(msg) && attempt < maxRetries) {
         const waitMs = Math.min(2000, 100 + attempt * 150);
-        await sleep(waitMs, jobId);
+        // Use the utility sleep with a cancellation check callback
+        await sleep(waitMs, () => jobs.get(jobId)?.cancelled);
         attempt++;
         continue;
       } else {
@@ -207,7 +91,7 @@ async function openAndGroupInBackground({ urls, windowId, delayMs, jobId }) {
 
       // optional delay between tabs (also cancel-aware)
       if (delayMs > 0) {
-        const waited = await sleep(delayMs, jobId);
+        const waited = await sleep(delayMs, () => jobs.get(jobId)?.cancelled);
         if (!waited) break; // cancelled during delay
       }
     }
@@ -228,127 +112,6 @@ async function openAndGroupInBackground({ urls, windowId, delayMs, jobId }) {
   } finally {
     jobs.delete(jobId);
   }
-}
-
-// ===== HELPER FUNCTIONS FOR SHORTCUTS =====
-function extractAll(text) {
-  if (!text) return [];
-
-  const urls = new Set();
-
-  // Method 1: Standard regex for complete URLs with http/https
-  const standardMatches = [...text.matchAll(/https?:\/\/[^\s"'<>()]+/gi)];
-  standardMatches.forEach(m => {
-    const cleaned = sanitizeUrl(m[0]
-      .replace(/[\u200B-\u200D\uFEFF]/g, "")
-      .replace(/[),.;\]]+$/g, "")
-      .trim());
-    if (cleaned) urls.add(cleaned);
-  });
-
-  // Method 2: Look for domain patterns (but be more careful)
-  const domainPattern = /(?:^|[^a-zA-Z0-9.-])([a-zA-Z0-9][-a-zA-Z0-9]{0,61}[a-zA-Z0-9]?\.)+(?:com|net|org|io|co|idomoo)(?:\/[^\s]*)?/gi;
-  const domainMatches = [...text.matchAll(domainPattern)];
-
-  domainMatches.forEach(m => {
-    let url = m[0].replace(/^[^a-zA-Z0-9]+/, "").replace(/[),.;\]]+$/g, "").trim();
-    if (!url.startsWith('http')) {
-      url = 'https://' + url;
-    }
-
-    const cleaned = sanitizeUrl(url);
-    if (!cleaned) return;
-
-    // Only add if it's not already a substring of an existing URL
-    let shouldAdd = true;
-    for (const existing of urls) {
-      if (existing.includes(cleaned.replace('https://', ''))) {
-        shouldAdd = false;
-        break;
-      }
-    }
-
-    if (shouldAdd && cleaned.includes('/')) {
-      urls.add(cleaned);
-    }
-  });
-
-  return [...urls];
-}
-
-// ✅ Extract URLs from anchor tags in selected HTML/table HTML
-function extractUrlsFromHtml(html) {
-  if (!html) return [];
-
-  try {
-    const doc = new DOMParser().parseFromString(html, "text/html");
-
-    return [...doc.querySelectorAll("a[href]")]
-      .map(a => a.getAttribute("href"))
-      .filter(Boolean)
-      .map(href => sanitizeUrl(href.trim()))
-      .filter(Boolean); // Remove null values from sanitizeUrl
-  } catch (e) {
-    console.warn("[Support Toolkit] Failed to parse HTML for URLs", e);
-    return [];
-  }
-}
-
-function unique(arr) {
-  return [...new Set(arr)];
-}
-
-function normalizeLines(raw) {
-  return raw.replace(/\r\n/g, "\n").split("\n").map(s => s.trim()).filter(Boolean);
-}
-
-function parseCompanyCount(raw) {
-  const lines = normalizeLines(raw);
-  if (!lines.length) return [];
-  const headA = (lines[0] || "").toLowerCase(), headB = (lines[1] || "").toLowerCase();
-  let start = 0;
-  if (headA === "company" && headB === "count") start = 2;
-  const rows = [];
-  for (let i = start; i < lines.length; i += 2) {
-    if (!lines[i]) break;
-    rows.push([lines[i], lines[i + 1] || ""]);
-  }
-  return rows;
-}
-
-function looksLikeHeaderTriplet(a, b, c) {
-  if (!a || !b || !c) return false;
-  const A = a.toLowerCase(), B = b.toLowerCase(), C = c.toLowerCase();
-  return ((A.includes("player") && A.includes("version")) || (A.includes("version") && !/\d/.test(A)))
-    && (B.includes("description") || B.includes("error"))
-    && (C.includes("count") || C.includes("unique"));
-}
-
-function parseVersionErrorCount(raw) {
-  const lines = normalizeLines(raw);
-  if (!lines.length) return [];
-  let start = 0;
-  if (looksLikeHeaderTriplet(lines[0], lines[1], lines[2])) start = 3;
-  const rows = [];
-  for (let i = start; i < lines.length; i += 3) {
-    const v = lines[i], e = lines[i + 1], c = lines[i + 2];
-    if (!v || !e || !c) break;
-    rows.push([v, e, c]);
-  }
-  return rows;
-}
-
-function rowsToTSV(headers, rows) {
-  const all = headers.length ? [headers, ...rows] : rows;
-  return all.map(r => r.join("\t")).join("\n");
-}
-
-function tableToHTML(headers, rows) {
-  const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const th = headers.length
-    ? `<thead><tr>${headers.map(h => `<th style="border:1px solid #000;padding:6px 8px;text-align:left;">${esc(h)}</th>`).join("")}</tr></thead>` : "";
-  const tb = `<tbody>${rows.map(r => `<tr>${r.map(c => `<td style="border:1px solid #000;padding:6px 8px;vertical-align:top;">${esc(c)}</td>`).join("")}</tr>`).join("")}</tbody>`;
-  return `<!doctype html><html><body><table style="border-collapse:collapse;">${th}${tb}</table></body></html>`;
 }
 
 // Show notification to user
@@ -464,7 +227,7 @@ chrome.commands.onCommand.addListener(async (command) => {
         return;
       }
 
-      // Extract URLs from <a href> + raw URLs in text, then dedupe
+      // Extract URLs using imported utilities
       const htmlToParse = picked.tableHtml || picked.html || "";
       const urlsFromHtml = extractUrlsFromHtml(htmlToParse);
       const urlsFromText = extractAll(picked.text || "");
@@ -531,6 +294,7 @@ chrome.commands.onCommand.addListener(async (command) => {
         return;
       }
 
+      // Use imported utility
       const rows = parseCompanyCount(clipboardText);
       if (!rows.length) {
         showNotification('Support Toolkit', 'Could not parse company/count data');
@@ -581,6 +345,7 @@ chrome.commands.onCommand.addListener(async (command) => {
         return;
       }
 
+      // Use imported utility
       const rowsVEC = parseVersionErrorCount(clipboardText);
       if (!rowsVEC.length) {
         showNotification('Support Toolkit', 'Could not parse version/error/count data');
@@ -623,9 +388,8 @@ chrome.commands.onCommand.addListener(async (command) => {
         return;
       }
 
-      const pad2 = (n) => String(n).padStart(2, "0");
-
       const d = new Date();
+      // Use imported utility
       const dd = pad2(d.getDate());
       const mm = pad2(d.getMonth() + 1);
       const yy = pad2(d.getFullYear() % 100);
