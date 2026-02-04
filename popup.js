@@ -166,8 +166,9 @@ document.addEventListener('DOMContentLoaded', () => {
       // Pattern 1: index.html?id=XXXXX (with potential query params after)
       const matchesIndexId = cleanedUrl.match(/^(https?:\/\/[^\s"'<>()]+index\.html\?id=)([^&\s]+)(.*)$/i);
       
-      // Pattern 2: index.html?url=https://...XXXXX.m3u8 (stops at first uppercase in the video path)
-      const matchesIndexM3u8 = cleanedUrl.match(/^(https?:\/\/[^\s"'<>()]+index\.html\?url=https?:\/\/[^\s"'<>()]+?)([a-z0-9/]+\.m3u8)(.*)$/i);
+      // Pattern 2: ANY path?url=https://...XXXXX.m3u8 (stops at first uppercase in the video path)
+      // UPDATED: Removed hardcoded "index.html" requirement
+      const matchesIndexM3u8 = cleanedUrl.match(/^(https?:\/\/[^\s"'<>()]+?\?url=https?:\/\/[^\s"'<>()]+?)([a-z0-9/]+\.m3u8)(.*)$/i);
       
       let finalUrl = null;
 
