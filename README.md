@@ -13,8 +13,9 @@ If you’re handling support dashboards and reports daily, you know the routine:
 
 ## ✅ Features
 
+- 📅 **Daily Report Date** copier for email titles (one-click)
 - 📊 **Grafana → Daily Report** formatter (TSV/HTML-ready)
-- 🔗 **Open & Group URLs** for failed LPs
+- 🔗 **Open & Group URLs** for Failed LPs and Black Frame MP4s
 - 🪄 Instant clipboard import
 - 💾 Clean export-ready tables for Docs or Sheets
 - 🎨 Polished, consistent UI built for clarity
@@ -23,13 +24,17 @@ If you’re handling support dashboards and reports daily, you know the routine:
 
 Support Toolkit includes global keyboard shortcuts for quick actions:
 
-- **`Ctrl + Shift + Z`** (Mac: `Cmd + Shift + Z`) — Open & group selected LP URLs  
+- **`Ctrl + Shift + Z`** (Mac: `Cmd + Shift + Z`) — Open & group selected LP URLs
+- **`Ctrl + Shift + F`** (Mac: `Cmd + Shift + F`) — Open & group selected Black Frames videos URL 
 - **`Ctrl + Shift + B`** (Mac: `Cmd + Shift + B`) — Format Company / Count report (TSV)  
 - **`Ctrl + Shift + E`** (Mac: `Cmd + Shift + E`) — Format Media Errors (TSV + HTML)
+
+### ⚙️ Optional Configuration
+The following shortcut is available but must be assigned manually:
+
 - **`Ctrl + Shift + X`** (Mac: `Cmd + Shift + X`) — Copy today’s date & day to clipboard
 
-> Shortcuts can be customized in Chrome via **Extensions → Keyboard shortcuts** (`chrome://extensions/shortcuts`).
-
+> **Note:** Shortcuts can be customized or resolved in Chrome via **Extensions → Keyboard shortcuts** (`chrome://extensions/shortcuts`).
 
 ## 🔧 Installation
 
