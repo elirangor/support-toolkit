@@ -43,9 +43,6 @@
       <h3><span class="icon">🔗</span> Open & Group LP URLs</h3>
       <p class="subtitle">Click "Read clipboard" or paste your table text below.</p>
 
-      <div id="urlStatus"></div>
-      <div id="urlCounts"></div>
-
       <div class="row">
         <button id="readUrlClip">📋 Read clipboard</button>
         <label><input type="checkbox" id="useDelay"><span>1s delay between tabs</span></label>
@@ -53,6 +50,7 @@
 
       <textarea id="urlInput" placeholder="Paste your table text with URLs here…"></textarea>
       
+      <div id="urlCounts"></div>
       <div id="urlPreview"></div>
 
       <div class="actions">
@@ -67,8 +65,6 @@
     <div class="tab-content" id="grafana-content">
       <h3><span class="icon">📊</span> Grafana → Daily Report <span class="badge">Docs/Sheets</span></h3>
       <p class="subtitle">Paste Grafana text to generate a clean report.</p>
-
-      <div id="tsvStatus"></div>
 
       <div class="row">
         <button id="readGrafanaClip">📋 Read clipboard</button>
@@ -90,6 +86,10 @@
         </button>
       </div>
     </div>
+    
+    <div id="status-overlay" class="hidden">
+      </div>
+
   </div>
 
   <div class="credit">
