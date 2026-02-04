@@ -409,7 +409,7 @@ h3 {
 
 textarea {
   width: 100%;
-  height: 130px;
+  height: 80px;
   padding: 12px;
   border: 2px solid #444c56;
   border-radius: 8px;
@@ -449,6 +449,7 @@ input[type="checkbox"] {
   accent-color: #4a9eff
 }
 
+/* ========= Status Messages (Updated for better visibility) ========= */
 #urlCounts,
 #urlPreview,
 #urlStatus,
@@ -458,12 +459,14 @@ input[type="checkbox"] {
   padding: 12px 14px;
   background: #2b2f36;
   border-radius: 8px;
-  margin-top: 12px;
+  margin-top: 0;
+  margin-bottom: 12px;
   font-weight: 500;
   transition: background-color 0.3s, color 0.3s;
   line-height: 1.6;
   word-wrap: break-word;
   overflow-wrap: break-word;
+  border-left: 4px solid #4a9eff; /* Accent for visibility */
 }
 
 #tsvStatus {
@@ -474,16 +477,9 @@ input[type="checkbox"] {
 #urlPreview {
   max-height: 160px;
   overflow: auto;
-  background: #2b2f36;
-  border: 2px solid #444c56;
-  font-size: 12px;
-  font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
-  color: #e0e0e0;
-  line-height: 1.6;
-  white-space: nowrap;
-  overflow-x: auto;
-  word-wrap: normal;
-  overflow-wrap: normal;
+  background: #22262b; /* Slightly darker */
+  border: 1px solid #444c56;
+  border-left: none; /* No accent for preview list */
 }
 
 #urlPreview .url-line {

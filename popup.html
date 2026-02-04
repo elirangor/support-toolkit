@@ -41,8 +41,10 @@
 
     <div class="tab-content active" id="urls-content">
       <h3><span class="icon">🔗</span> Open & Group LP URLs</h3>
-      <p class="subtitle">Click "Read clipboard" or paste your table text below. Duplicates are automatically removed.
-      </p>
+      <p class="subtitle">Click "Read clipboard" or paste your table text below.</p>
+
+      <div id="urlStatus"></div>
+      <div id="urlCounts"></div>
 
       <div class="row">
         <button id="readUrlClip">📋 Read clipboard</button>
@@ -50,7 +52,7 @@
       </div>
 
       <textarea id="urlInput" placeholder="Paste your table text with URLs here…"></textarea>
-      <div id="urlCounts"></div>
+      
       <div id="urlPreview"></div>
 
       <div class="actions">
@@ -60,14 +62,13 @@
         </button>
         <button id="stopOpen" class="danger" style="display:none;">⏹ Stop</button>
       </div>
-
-      <div id="urlStatus"></div>
     </div>
 
     <div class="tab-content" id="grafana-content">
       <h3><span class="icon">📊</span> Grafana → Daily Report <span class="badge">Docs/Sheets</span></h3>
-      <p class="subtitle">Paste your Grafana table text below to generate a clean, ready-to-copy report (HTML or TSV)
-      </p>
+      <p class="subtitle">Paste Grafana text to generate a clean report.</p>
+
+      <div id="tsvStatus"></div>
 
       <div class="row">
         <button id="readGrafanaClip">📋 Read clipboard</button>
@@ -88,8 +89,6 @@
           <span class="keyboard-hint" id="shortcut-errors"></span>
         </button>
       </div>
-
-      <div id="tsvStatus"></div>
     </div>
   </div>
 
