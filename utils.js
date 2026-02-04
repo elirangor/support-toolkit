@@ -54,51 +54,43 @@ export function normalizeLines(raw) {
 // Security: Validate and sanitize URLs
 export function sanitizeUrl(url) {
   try {
-    // First, clean up the URL: fix malformed ?url= that should be &url=
     let cleanedUrl = url;
-    
-    // Find first ? and replace subsequent ? with &
+
     const firstQuestionMark = cleanedUrl.indexOf('?');
     if (firstQuestionMark !== -1) {
       const beforeQuery = cleanedUrl.substring(0, firstQuestionMark + 1);
       const afterQuery = cleanedUrl.substring(firstQuestionMark + 1);
-      // Replace any ? in query string with &
       cleanedUrl = beforeQuery + afterQuery.replace(/\?/g, '&');
     }
-    
-    // Pattern 1: index.html?id=XXXXX (with potential query params after)
+
     const matchesIndexId = cleanedUrl.match(/^(https?:\/\/[^\s"'<>()]+index\.html\?id=)([^&\s]+)(.*)$/i);
-    
-    // Pattern 2: ANY path?url=https://...XXXXX.m3u8 (stops at first uppercase in the video path)
     const matchesIndexM3u8 = cleanedUrl.match(/^(https?:\/\/[^\s"'<>()]+?\?url=https?:\/\/[^\s"'<>()]+?)([a-z0-9/]+\.m3u8)(.*)$/i);
-    
+    const matchesMp4 = cleanedUrl.match(/^(https?:\/\/(?:[a-zA-Z0-9-]+\.)*idomoo\.com\/[a-zA-Z0-9\/._-]+\.mp4)$/i);
+
+    if (matchesMp4) return matchesMp4[1];
+
     let finalUrl = null;
 
     if (matchesIndexId) {
       let base = matchesIndexId[1];
       let idPart = matchesIndexId[2];
-      let queryParams = matchesIndexId[3]; // Everything after the ID
-      
-      // Stop at first uppercase in the ID itself
+      let queryParams = matchesIndexId[3];
+
       const idxUp = idPart.search(/[A-Z]/);
       if (idxUp !== -1) idPart = idPart.slice(0, idxUp);
-      
-      // If there's a &url= parameter, extract and clean the m3u8 URL
+
       if (queryParams.includes('&url=')) {
         const urlMatch = queryParams.match(/(&url=https?:\/\/[^\s&]+?)([a-z0-9/]+\.m3u8)/i);
         if (urlMatch) {
           const urlBase = urlMatch[1];
           let m3u8Path = urlMatch[2];
-          
-          // Stop at first uppercase in m3u8 filename
+
           const m3u8UpIdx = m3u8Path.search(/[A-Z]/);
           if (m3u8UpIdx !== -1) m3u8Path = m3u8Path.slice(0, m3u8UpIdx);
-          
-          // Cut after .m3u8 extension
+
           const m3u8Idx = m3u8Path.indexOf('.m3u8');
           if (m3u8Idx !== -1) m3u8Path = m3u8Path.slice(0, m3u8Idx + 6);
-          
-          // Reconstruct: keep other query params before &url=
+
           const beforeUrl = queryParams.substring(0, queryParams.indexOf('&url='));
           finalUrl = base + idPart + beforeUrl + urlBase + m3u8Path;
         } else {
@@ -107,56 +99,47 @@ export function sanitizeUrl(url) {
       } else {
         finalUrl = base + idPart + queryParams;
       }
-      
+
     } else if (matchesIndexM3u8) {
       let base = matchesIndexM3u8[1];
       let m3u8 = matchesIndexM3u8[2];
-      
-      // Stop at first uppercase in m3u8 path (before .m3u8)
+
       const idxUp = m3u8.search(/[A-Z]/);
       if (idxUp !== -1) m3u8 = m3u8.slice(0, idxUp);
-      
-      // Cut after .m3u8
+
       const idxM3U8 = m3u8.indexOf('.m3u8');
       if (idxM3U8 !== -1) m3u8 = m3u8.slice(0, idxM3U8 + 6);
-      
+
       finalUrl = base + m3u8;
     }
 
-    // Final validation: block if uppercase in the video ID/hash portion
-    // But allow uppercase in query parameters (like &l=EN)
     if (!finalUrl) return null;
-    
-    // Check for uppercase only in the hash/ID part, not in query params
+
     try {
       const urlObj = new URL(finalUrl);
       const idParam = urlObj.searchParams.get('id');
       const urlParam = urlObj.searchParams.get('url');
-      
-      // If there's an ID param with uppercase in the video hash, reject
+
       if (idParam) {
-        // Extract just the video hash part (after project/account IDs)
         const idParts = idParam.split('/');
         if (idParts.length > 0) {
           const videoHash = idParts[idParts.length - 1];
           if (/[A-Z]/.test(videoHash)) return null;
         }
       }
-      
+
       if (urlParam) {
-        // Extract the video hash from the URL parameter
         const urlParts = urlParam.split('/');
         const lastPart = urlParts[urlParts.length - 1];
         const videoHash = lastPart.replace('.m3u8', '');
         if (/[A-Z]/.test(videoHash)) return null;
       }
     } catch (urlParseError) {
-      // If URL parsing fails, return null
       return null;
     }
-    
+
     return finalUrl;
-    
+
   } catch (e) {
     return null;
   }
@@ -166,8 +149,6 @@ export function extractAll(text) {
   if (!text) return [];
 
   const urls = new Set();
-
-  // Method 1: Standard regex for complete URLs with http/https
   const standardMatches = [...text.matchAll(/https?:\/\/[^\s"'<>()]+/gi)];
   standardMatches.forEach(m => {
     const cleaned = sanitizeUrl(m[0]
@@ -177,7 +158,6 @@ export function extractAll(text) {
     if (cleaned) urls.add(cleaned);
   });
 
-  // Method 2: Look for domain patterns (but be more careful)
   const domainPattern = /(?:^|[^a-zA-Z0-9.-])([a-zA-Z0-9][-a-zA-Z0-9]{0,61}[a-zA-Z0-9]?\.)+(?:com|net|org|io|co|idomoo)(?:\/[^\s]*)?/gi;
   const domainMatches = [...text.matchAll(domainPattern)];
 
@@ -190,7 +170,6 @@ export function extractAll(text) {
     const cleaned = sanitizeUrl(url);
     if (!cleaned) return;
 
-    // Only add if it's not already a substring of an existing URL
     let shouldAdd = true;
     for (const existing of urls) {
       if (existing.includes(cleaned.replace('https://', ''))) {
@@ -207,6 +186,16 @@ export function extractAll(text) {
   return [...urls];
 }
 
+// NEW: Extract specific idomoo MP4s from messy text
+export function extractIdomooMp4s(text) {
+  if (!text) return [];
+  // Regex: https://(anything).idomoo.com/(path).mp4
+  // We stop specifically at .mp4 to avoid grabbing subsequent text like "EU:Account..."
+  const regex = /https?:\/\/(?:[a-zA-Z0-9-]+\.)*idomoo\.com\/[a-zA-Z0-9\/._-]+\.mp4/gi;
+  const matches = [...text.matchAll(regex)].map(m => m[0]);
+  return unique(matches);
+}
+
 export function extractUrlsFromHtml(html) {
   if (!html) return [];
 
@@ -217,7 +206,7 @@ export function extractUrlsFromHtml(html) {
       .map(a => a.getAttribute("href"))
       .filter(Boolean)
       .map(href => sanitizeUrl(href.trim()))
-      .filter(Boolean); // Remove null values from sanitizeUrl
+      .filter(Boolean);
   } catch (e) {
     console.warn("[Support Toolkit] Failed to parse HTML for URLs", e);
     return [];

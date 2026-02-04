@@ -24,6 +24,7 @@ body {
     position: relative;
     height: auto;
     min-height: 400px;
+    overflow: hidden; /* Ensures content respects the rounded corners */
 }
 
 /* Header Sections */
@@ -34,6 +35,8 @@ body {
     padding: 0;
     background: #31363d;
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    /* CHANGED: Added explicit top rounding to fix sticky clipping issues */
+    border-radius: 16px 16px 0 0;
 }
 
 /* Content Areas */

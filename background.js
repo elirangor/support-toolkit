@@ -2,6 +2,7 @@
 import {
   extractAll,
   extractUrlsFromHtml,
+  extractIdomooMp4s, // Added import
   unique,
   parseCompanyCount,
   parseVersionErrorCount,
@@ -29,6 +30,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg?.type === "OPEN_URLS") {
     (async () => {
       try {
+        // Pass payload directly which includes groupTitle/Color
         const result = await processUrlJob(msg.payload);
         sendResponse({ ok: true, ...result });
       } catch (e) {
@@ -36,7 +38,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         sendResponse({ ok: false, error: e?.message || String(e) });
       }
     })();
-    return true; 
+    return true;
   }
 
   if (msg?.type === "STOP_OPEN") {
@@ -108,7 +110,34 @@ chrome.commands.onCommand.addListener(async (command) => {
       await processUrlJob({ urls, windowId: currentTab.windowId, delayMs: useDelayBetweenTabs ? 1000 : 0, jobId });
       showNotification('Success', `Finished opening ${urls.length} tabs.`);
 
-    // --- SHORTCUT: Format Company Batch (Restricted to Grafana) ---
+      // --- NEW SHORTCUT: Open Black Frames (Global/Any text) ---
+    } else if (command === "open-black-frames") {
+
+      const text = await getSelectionText(currentTab.id);
+      if (!text) return showNotification('No Selection', 'Please select text containing black frame videos first.');
+
+      const urls = extractIdomooMp4s(text);
+
+      if (!urls.length) return showNotification('No MP4s Found', 'No black frame video links were found in selection.');
+      if (urls.length > MAX_TABS_PER_JOB) return showNotification('Limit Exceeded', `Found ${urls.length} URLs. Max allowed is ${MAX_TABS_PER_JOB}.`);
+
+      const jobId = `${Date.now()}-bf-shortcut`;
+      const { useDelayBetweenTabs } = await chrome.storage.local.get(['useDelayBetweenTabs']);
+
+      showNotification('Processing', `Opening ${urls.length} Black Frames...`);
+      // Use "grey" color for Black Frames group
+      await processUrlJob({
+        urls,
+        windowId: currentTab.windowId,
+        delayMs: useDelayBetweenTabs ? 1000 : 0,
+        jobId,
+        groupTitle: "Black Frames",
+        groupColor: "grey"
+      });
+      showNotification('Success', `Opened ${urls.length} Black Frame videos.`);
+
+
+      // --- SHORTCUT: Format Company Batch (Restricted to Grafana) ---
     } else if (command === "format-company-batch") {
       if (!currentUrl.includes("grafana.net")) {
         return showNotification('Invalid Site', 'Company Batch formatting only works on idomoo.grafana.net.');
@@ -123,7 +152,7 @@ chrome.commands.onCommand.addListener(async (command) => {
       await writeToClipboard(currentTab.id, rowsToTSV([], rows));
       showNotification('Formatted', `✓ ${rows.length} rows copied as TSV for spreadsheets.`);
 
-    // --- SHORTCUT: Format Media Errors (Restricted to Grafana) ---
+      // --- SHORTCUT: Format Media Errors (Restricted to Grafana) ---
     } else if (command === "format-media-errors") {
       if (!currentUrl.includes("grafana.net")) {
         return showNotification('Invalid Site', 'Media Error formatting only works on idomoo.grafana.net.');
@@ -139,7 +168,7 @@ chrome.commands.onCommand.addListener(async (command) => {
       await writeToClipboardHTML(currentTab.id, tableToHTML([], finalRows), rowsToTSV([], finalRows));
       showNotification('Formatted', `✓ ${finalRows.length} rows copied (HTML Table + TSV).`);
 
-    // --- SHORTCUT: Paste Daily Report (Restricted to Gmail) ---
+      // --- SHORTCUT: Paste Daily Report (Restricted to Gmail) ---
     } else if (command === "copy-daily-report") {
       if (!currentUrl.includes("mail.google.com")) {
         return showNotification('Invalid Site', 'The Daily Report shortcut only works within Gmail.');

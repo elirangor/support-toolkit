@@ -42,8 +42,8 @@
     </div>
 
     <div class="tab-content active" id="urls-content">
-      <h3><span class="icon">🔗</span> Open & Group LP/Black Frames URLs</h3>
-      <p class="subtitle">Click "Read clipboard" or paste your table text below.</p>
+      <h3><span class="icon">🔗</span> Open & Group URLs</h3>
+      <p class="subtitle">Click "Read clipboard" or paste your text below.</p>
 
       <div class="row">
         <button id="readUrlClip">📋 Read clipboard</button>
@@ -57,10 +57,20 @@
 
       <div class="actions">
         <button id="runUrls" class="primary grow">
-          🚀 Open & group as "Failed LP"
+          🚀 Group "Failed LP"
           <span class="keyboard-hint" id="shortcut-urls"></span>
         </button>
-        <button id="stopOpen" class="danger" style="display:none;">⏹ Stop</button>
+      </div>
+
+      <div class="actions">
+        <button id="runBlackFrames" class="primary grow">
+          🎥 Group "Black Frames"
+          <span class="keyboard-hint" id="shortcut-black-frames"></span>
+        </button>
+      </div>
+      
+      <div class="actions" style="display:none;">
+        <button id="stopOpen" class="danger">⏹ Stop</button>
       </div>
     </div>
 

@@ -3,6 +3,7 @@ import {
   pad2,
   unique,
   extractAll,
+  extractIdomooMp4s,
   escapeHtml,
   truncate,
   parseCompanyCount,
@@ -10,6 +11,9 @@ import {
   rowsToTSV,
   tableToHTML
 } from './utils.js';
+
+// Global variable to track current job for cancellation
+let currentJobId = null;
 
 // ===== NEW: Centralized Overlay Manager =====
 function showOverlay(title, description, type = 'success') {
@@ -23,17 +27,42 @@ function showOverlay(title, description, type = 'success') {
   if (type === 'info') icon = 'ℹ️';
   if (type === 'loading') icon = '⏳';
 
-  overlay.innerHTML = `
+  let contentHtml = `
     <div class="status-card ${type}">
       <div class="status-icon">${icon}</div>
       <div class="status-title">${title}</div>
       <div class="status-desc">${description}</div>
-    </div>
   `;
 
+  // ADDED: If loading, add a Cancel button directly to the overlay
+  if (type === 'loading') {
+    contentHtml += `
+      <div style="margin-top:15px;">
+        <button id="overlay-cancel-btn" class="danger" style="padding: 8px 16px; font-size:12px;">⏹ Stop Operation</button>
+      </div>
+    `;
+  }
+
+  contentHtml += `</div>`;
+  overlay.innerHTML = contentHtml;
   overlay.classList.remove('hidden');
 
-  // Auto-hide after 2.5 seconds (unless it's an error, maybe keep it longer, or loading)
+  // Handle Cancel Button Click
+  if (type === 'loading') {
+    const cancelBtn = document.getElementById('overlay-cancel-btn');
+    if (cancelBtn) {
+      cancelBtn.addEventListener('click', (e) => {
+        e.stopPropagation(); // Prevent overlay click-to-dismiss
+        if (currentJobId) {
+          chrome.runtime.sendMessage({ type: "STOP_OPEN", jobId: currentJobId }, (resp) => {
+            showOverlay('Stopped', 'Operation cancelled by user', 'info');
+          });
+        }
+      });
+    }
+  }
+
+  // Auto-hide logic
   if (type !== 'loading') {
     if (overlay.dataset.timer) clearTimeout(overlay.dataset.timer);
     overlay.dataset.timer = setTimeout(() => {
@@ -42,12 +71,16 @@ function showOverlay(title, description, type = 'success') {
   }
 }
 
-// Allow clicking overlay to dismiss immediately
+// Allow clicking overlay to dismiss immediately (unless loading)
 document.addEventListener('DOMContentLoaded', () => {
   const overlay = document.getElementById('status-overlay');
   if (overlay) {
     overlay.addEventListener('click', () => {
-      overlay.classList.add('hidden');
+        // Don't auto-dismiss if we are in the middle of a loading operation (user must click Stop)
+        const isLoading = overlay.querySelector('.status-card.loading');
+        if (!isLoading) {
+            overlay.classList.add('hidden');
+        }
     });
   }
 });
@@ -55,7 +88,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 document.addEventListener('DOMContentLoaded', () => {
 
-  // ... (Shortcuts logic remains same) ...
+  // ... (Shortcuts logic) ...
   async function loadShortcuts() {
     try {
       const commands = await chrome.commands.getAll();
@@ -65,6 +98,7 @@ document.addEventListener('DOMContentLoaded', () => {
         else if (cmd.name === 'format-company-batch') elementId = 'shortcut-batch';
         else if (cmd.name === 'format-media-errors') elementId = 'shortcut-errors';
         else if (cmd.name === 'copy-daily-report') elementId = 'shortcut-daily';
+        else if (cmd.name === 'open-black-frames') elementId = 'shortcut-black-frames';
 
         if (elementId && cmd.shortcut) {
           const el = document.getElementById(elementId);
@@ -75,7 +109,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   loadShortcuts();
 
-  // ... (Daily Report logic remains same) ...
+  // ... (Daily Report logic) ...
   function pad2(n) { return String(n).padStart(2, '0'); }
   function getDailyReportTextFull(d = new Date()) {
     const dd = pad2(d.getDate());
@@ -134,7 +168,7 @@ document.addEventListener('DOMContentLoaded', () => {
     chrome.storage.local.set({ useDelayBetweenTabs: delayCheckbox.checked });
   });
 
-  // URL Preview Logic (Local Helper)
+  // URL Preview Logic
   function formatUrlForPreview(u) {
     try {
       const url = new URL(u);
@@ -153,7 +187,6 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    const removed = allUrls.length - uniqueUrls.length;
     counts.textContent = `Found ${allUrls.length} URL(s) → ${uniqueUrls.length} unique`;
 
     preview.innerHTML = uniqueUrls.map((u, i) => {
@@ -161,11 +194,21 @@ document.addEventListener('DOMContentLoaded', () => {
     }).join("");
   }
 
+  // Helper to extract BOTH types of URLs for preview
+  function extractCombinedUrls(text) {
+      if (!text) return [];
+      const standard = extractAll(text);
+      const mp4s = extractIdomooMp4s(text);
+      // Combine them so the user sees everything
+      return [...standard, ...mp4s];
+  }
+
   document.getElementById('readUrlClip').addEventListener('click', async () => {
     try {
       const t = await navigator.clipboard.readText();
       document.getElementById('urlInput').value = t || '';
-      const all = extractAll(t);
+      
+      const all = extractCombinedUrls(t);
       renderUrlPreview(all, unique(all));
 
       if (t) showOverlay('Clipboard Loaded', `Found ${all.length} URLs in text`, 'info');
@@ -178,31 +221,32 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('urlInput').addEventListener('input', (e) => {
     const t = e.target.value || '';
-    const all = extractAll(t);
+    // CHANGED: Use combined extraction so MP4s show up too
+    const all = extractCombinedUrls(t);
     renderUrlPreview(all, unique(all));
   });
 
   // Open URLs Logic
   const runBtn = document.getElementById('runUrls');
+  const runBFBtn = document.getElementById('runBlackFrames');
   const stopBtn = document.getElementById('stopOpen');
-  let currentJobId = null;
 
   function setRunning(running, totalCount = null) {
     if (running) {
       runBtn.disabled = true;
+      runBFBtn.disabled = true;
       stopBtn.style.display = '';
       if (totalCount != null)
         showOverlay('Processing...', `Opening ${totalCount} tabs in background`, 'loading');
     } else {
       runBtn.disabled = false;
+      runBFBtn.disabled = false;
       stopBtn.style.display = 'none';
     }
   }
 
-  runBtn.addEventListener('click', async () => {
-    const text = document.getElementById('urlInput').value || '';
-    const urls = unique(extractAll(text));
-
+  // Helper to start job
+  function startOpenJob(urls, groupTitle, groupColor) {
     if (!urls.length) return showOverlay('No URLs', 'Please paste text containing URLs first.', 'error');
     if (urls.length > MAX_TABS_PER_JOB) return showOverlay('Too Many URLs', `Limit is ${MAX_TABS_PER_JOB}. Found ${urls.length}.`, 'error');
 
@@ -216,19 +260,41 @@ document.addEventListener('DOMContentLoaded', () => {
 
       chrome.runtime.sendMessage({
         type: "OPEN_URLS",
-        payload: { urls, windowId: currentTab.windowId, delayMs: delayEnabled ? 1000 : 0, jobId }
+        payload: { 
+            urls, 
+            windowId: currentTab.windowId, 
+            delayMs: delayEnabled ? 1000 : 0, 
+            jobId,
+            groupTitle,
+            groupColor
+        }
       }, (resp) => {
         setRunning(false);
         if (!resp) return showOverlay('System Error', 'No response from background script', 'error');
 
         if (resp.ok) {
-          showOverlay('Action Complete', `Opened ${resp.count} Tabs.<br>Grouped as "Failed LP"`, 'success');
+          showOverlay('Action Complete', `Opened ${resp.count} Tabs.<br>Grouped as "${groupTitle}"`, 'success');
         } else {
           showOverlay('Action Failed', resp.error, 'error');
         }
         currentJobId = null;
       });
     });
+  }
+
+  runBtn.addEventListener('click', () => {
+    const text = document.getElementById('urlInput').value || '';
+    const urls = unique(extractAll(text));
+    startOpenJob(urls, "Failed LP", "red");
+  });
+
+  runBFBtn.addEventListener('click', () => {
+    const text = document.getElementById('urlInput').value || '';
+    const urls = extractIdomooMp4s(text);
+    if (!urls.length) {
+        return showOverlay('No MP4s', 'No black frame videos found in text.', 'error');
+    }
+    startOpenJob(urls, "Black Frames", "grey");
   });
 
   stopBtn.addEventListener('click', () => {

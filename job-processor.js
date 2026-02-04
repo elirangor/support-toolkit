@@ -52,7 +52,8 @@ async function createTabWithRetry({ url, windowId, jobId, maxRetries = 20 }) {
 }
 
 // Main exported function to run a job
-export async function processUrlJob({ urls, windowId, delayMs, jobId }) {
+// ADDED: groupTitle and groupColor arguments
+export async function processUrlJob({ urls, windowId, delayMs, jobId, groupTitle = "Failed LP", groupColor = "red" }) {
     if (urls.length > MAX_TABS_PER_JOB) {
         throw new Error(`Cannot open more than ${MAX_TABS_PER_JOB} tabs at once.`);
     }
@@ -77,7 +78,7 @@ export async function processUrlJob({ urls, windowId, delayMs, jobId }) {
         if (tabIds.length) {
             try {
                 groupId = await chrome.tabs.group({ tabIds, createProperties: { windowId } });
-                await chrome.tabGroups.update(groupId, { title: "Failed LP", color: "red" });
+                await chrome.tabGroups.update(groupId, { title: groupTitle, color: groupColor });
             } catch (e) {
                 console.warn('Grouping failed:', e);
             }

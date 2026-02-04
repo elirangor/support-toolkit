@@ -51,7 +51,8 @@ button.danger:hover {
 /* --- Daily Report Header Button (Special) --- */
 #copyDailyReport.primary {
     width: 100%;
-    border-radius: 0;
+    /* CHANGED: Round top corners to match container (16px), keep bottom square */
+    border-radius: 16px 16px 0 0;
     padding: 18px 20px;
     box-shadow: none;
     border: none;
